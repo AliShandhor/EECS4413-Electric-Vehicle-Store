@@ -1,60 +1,92 @@
 package com.evs.electricvehiclestore.service;
 
-import java.util.Optional;
-
-import org.springframework.stereotype.Service;
-
+import com.evs.electricvehiclestore.config.JwtUtil;
+import com.evs.electricvehiclestore.config.TokenBlacklist;
 import com.evs.electricvehiclestore.entity.User;
 import com.evs.electricvehiclestore.entity.UserDTO;
 import com.evs.electricvehiclestore.repository.UserRepository;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class IdentityService {
 
     private final UserRepository userRepository;
+    private final JwtUtil jwtUtil;
+    private final TokenBlacklist tokenBlacklist;
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-    public IdentityService(UserRepository userRepository) {
+    public IdentityService(UserRepository userRepository, JwtUtil jwtUtil, TokenBlacklist tokenBlacklist) {
         this.userRepository = userRepository;
+        this.jwtUtil = jwtUtil;
+        this.tokenBlacklist = tokenBlacklist;
     }
 
-    // UC1: Register Customer
+    // UC1: Register
+    @Transactional
     public User register(UserDTO userDTO) {
-        if (userRepository.existsByEmail(userDTO.email())) {
+        String normalizedEmail = userDTO.email().trim().toLowerCase();
+
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new IllegalArgumentException("Registration failed: Email already exists.");
         }
-        
+
+        String hashedPassword = passwordEncoder.encode(userDTO.password());
+
         User newUser = new User(
-            userDTO.fullName(),
-            userDTO.email(),
-            userDTO.password(),
+            userDTO.fullName().trim(),
+            normalizedEmail,
+            hashedPassword,
             userDTO.role() == null ? "CUSTOMER" : userDTO.role()
         );
-        
+
         return userRepository.save(newUser);
     }
 
-    // UC2: Sign In
-    // Returns a dummy session token string since security architectures aren't integrated yet
-    public String login(String email, String password) {
-        Optional<User> userOpt = userRepository.findByEmail(email);
-        
-        if (userOpt.isPresent() && userOpt.get().getPassword().equals(password)) {
-            // Generates a mock token to fit your Stateless REST specification (Page 6)
-            return "mock-jwt-token-for-" + userOpt.get().getId();
+    // UC2: Sign In — returns a real signed JWT
+    public Map<String, Object> login(String email, String password) {
+        String normalizedEmail = email.trim().toLowerCase();
+
+        Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
+
+        if (userOpt.isEmpty() || !passwordEncoder.matches(password, userOpt.get().getPassword())) {
+            throw new IllegalArgumentException("Invalid email or password.");
         }
-        
-        throw new IllegalArgumentException("Invalid email or password.");
+
+        User user = userOpt.get();
+        String token = jwtUtil.generateToken(user.getEmail());
+
+        return Map.of(
+            "token", token,
+            "expiresInSeconds", jwtUtil.getExpirationSeconds(),
+            "user", Map.of(
+                "id", user.getId(),
+                "fullName", user.getFullName(),
+                "email", user.getEmail(),
+                "role", user.getRole()
+            )
+        );
     }
 
-    // UC3: Sign Out
+    // UC3: Sign Out — revokes the token server-side
     public void logout(String token) {
-        // Stateless APIs do not store sessions on the server (Page 6).
-        // Clients simply destroy the token on their end.
-        System.out.println("Token invalidated successfully: " + token);
+        if (token != null && !token.isBlank()) {
+            tokenBlacklist.revoke(token);
+        }
     }
 
-    // Diagnostic validation method requested in requirements documentation
+    // Token validation — used by protected endpoints
+    public boolean validateToken(String token) {
+        if (token == null || token.isBlank()) return false;
+        if (tokenBlacklist.isRevoked(token)) return false;
+        return jwtUtil.isValid(token);
+    }
+
     public boolean checkEmailExists(String email) {
-        return userRepository.existsByEmail(email);
+        return userRepository.existsByEmail(email.trim().toLowerCase());
     }
 }
