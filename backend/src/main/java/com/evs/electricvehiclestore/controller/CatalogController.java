@@ -1,10 +1,15 @@
 package com.evs.electricvehiclestore.controller;
 
+import java.util.List;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.evs.electricvehiclestore.entity.Vehicle;
 import com.evs.electricvehiclestore.service.CatalogService;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/catalog")
@@ -39,6 +44,21 @@ public class CatalogController {
     @GetMapping("/vehicles/year/{year}")
     public List<Vehicle> filterByYear(@PathVariable int year) {
         return catalogService.filterByYear(year);
+    }
+
+    @GetMapping("/vehicles/search")
+    public List<Vehicle> searchVehicles(
+            @RequestParam String keyword
+    ) {
+        return catalogService.searchVehicles(keyword);
+    }
+
+    @GetMapping("/vehicles/price-range")
+    public List<Vehicle> filterByPriceRange(
+            @RequestParam double minPrice,
+            @RequestParam double maxPrice
+    ) {
+        return catalogService.filterByPriceRange(minPrice, maxPrice);
     }
 
     @GetMapping("/vehicles/sort/price")
