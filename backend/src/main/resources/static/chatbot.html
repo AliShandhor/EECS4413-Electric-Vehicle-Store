@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EV Store Chatbot</title>
+</head>
+<body>
+
+<h2>Electric Vehicle Store Chatbot</h2>
+
+<input type="text" id="message" placeholder="Ask a question..." size="50">
+<button onclick="sendMessage()">Send</button>
+
+<hr>
+
+<h3>Response</h3>
+
+<div id="response"></div>
+
+<script>
+
+function sendMessage() {
+
+    const message = document.getElementById("message").value;
+
+    fetch("/api/chatbot", {
+
+        method: "POST",
+
+        headers: {
+            "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+            message: message
+        })
+
+    })
+
+    .then(response => response.json())
+
+    .then(data => {
+
+        document.getElementById("response").innerHTML =
+            "<b>Chatbot:</b> " + data.response;
+
+    })
+
+    .catch(error => {
+
+        document.getElementById("response").innerHTML =
+            "Unable to contact chatbot.";
+
+    });
+
+}
+
+</script>
+
+</body>
+</html>
