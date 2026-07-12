@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In - Electric Vehicle Store</title>
+</head>
+<body>
+  <h1>Electric Vehicle Store</h1>
+  <h2>Sign In</h2>
+
+  <form id="loginForm">
+    <p>
+      <label for="email">Email</label><br>
+      <input type="email" id="email" name="email" placeholder="Enter your email" title="Email" required>
+    </p>
+    <p>
+      <label for="password">Password</label><br>
+      <input type="password" id="password" name="password" placeholder="Enter your password" title="Password" required>
+    </p>
+    <p>
+      <button type="submit">Sign In</button>
+    </p>
+  </form>
+
+  <p id="message"></p>
+  <p>Don't have an account? <a href="/register.html">Register here</a></p>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var msg = document.getElementById('message');
+      msg.textContent = '';
+
+      var body = {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      };
+
+      try {
+        var res = await fetch('/api/identity/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await res.json();
+
+        if (res.ok) {
+          localStorage.setItem('evsToken', data.token);
+          localStorage.setItem('evsUserFullName', data.user.fullName);
+          msg.textContent = 'Signed in successfully! Welcome, ' + data.user.fullName + '.';
+        } else {
+          msg.textContent = 'Error: ' + (data.error || 'Sign in failed.');
+        }
+      } catch (err) {
+        msg.textContent = 'Could not connect to the server.';
+      }
+    });
+  </script>
+</body>
+</html>

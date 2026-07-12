@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - Electric Vehicle Store</title>
+</head>
+<body>
+  <h1>Electric Vehicle Store</h1>
+  <h2>Create an Account</h2>
+
+  <form id="registerForm">
+    <p>
+      <label for="fullName">Full Name</label><br>
+      <input type="text" id="fullName" name="fullName" placeholder="Enter your full name" title="Full Name" required>
+    </p>
+    <p>
+      <label for="email">Email</label><br>
+      <input type="email" id="email" name="email" placeholder="Enter your email" title="Email" required>
+    </p>
+    <p>
+      <label for="password">Password</label><br>
+      <input type="password" id="password" name="password" placeholder="Enter your password" title="Password" required>
+    </p>
+    <p>
+      <button type="submit">Register</button>
+    </p>
+  </form>
+
+  <p id="message"></p>
+  <p>Already have an account? <a href="/login.html">Sign in here</a></p>
+
+  <script>
+    document.getElementById('registerForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var msg = document.getElementById('message');
+      msg.textContent = '';
+
+      var body = {
+        fullName: document.getElementById('fullName').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+        role: null
+      };
+
+      try {
+        var res = await fetch('/api/identity/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await res.json();
+
+        if (res.ok) {
+          msg.textContent = 'Account created successfully! Redirecting to sign in...';
+          setTimeout(function() { window.location.href = '/login.html'; }, 1500);
+        } else {
+          msg.textContent = 'Error: ' + (data.error || 'Registration failed.');
+        }
+      } catch (err) {
+        msg.textContent = 'Could not connect to the server.';
+      }
+    });
+  </script>
+</body>
+</html>
