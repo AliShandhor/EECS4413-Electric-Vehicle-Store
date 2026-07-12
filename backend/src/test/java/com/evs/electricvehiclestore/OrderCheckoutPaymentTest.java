@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,16 +25,20 @@ import com.evs.electricvehiclestore.repository.CartItemRepository;
 import com.evs.electricvehiclestore.repository.CartRepository;
 import com.evs.electricvehiclestore.repository.VehicleRepository;
 import com.evs.electricvehiclestore.service.OrderService;
+import com.evs.electricvehiclestore.service.PaymentService;
 
 /**
  * @author Uzma Alam
- * End-to-end tests for UC7 (Checkout), UC8 (Make Payment), and UC9 
+ * End-to-end tests for UC7 (Checkout), UC8 (Make Payment), and UC9
  */
 @SpringBootTest
 class OrderCheckoutPaymentTest {
 
     @Autowired
     private OrderService orderService;
+
+    @Autowired
+    private PaymentService paymentService;
 
     @Autowired
     private CartRepository cartRepository;
@@ -45,6 +50,11 @@ class OrderCheckoutPaymentTest {
     private VehicleRepository vehicleRepository;
 
     private static final Long TEST_USER_ID = 9001L;
+
+    @BeforeEach
+    void resetPaymentGateway() {
+        paymentService.resetForTesting();
+    }
 
     private Cart seedCartWithOneVehicle(double price) {
         return seedCartWithOneVehicle(TEST_USER_ID, price);
@@ -158,7 +168,7 @@ class OrderCheckoutPaymentTest {
     }
 
     /**
-        * This test verifies the mock payment gateway rule from the project spec
+     * This test verifies the mock payment gateway rule from the project spec
      */
     @Test
     @Transactional

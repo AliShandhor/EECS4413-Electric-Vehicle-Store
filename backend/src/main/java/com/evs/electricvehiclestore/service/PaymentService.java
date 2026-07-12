@@ -19,4 +19,8 @@ public class PaymentService {
         int attempt = attemptCounter.incrementAndGet();
         return attempt % 3 != 0;
     }
+
+    public void resetForTesting() {
+        attemptCounter.set(0);
+    }
 }
