@@ -12,9 +12,13 @@ public class ChatbotService {
 
         message = message.toLowerCase();
 
-        if (message.contains("hello") || message.contains("hi")) {
-            return "Hello! Welcome to the Electric Vehicle Store. How can I help you today?";
-        }
+        if (message.equals("hello")
+        || message.equals("hi")
+        || message.startsWith("hello ")
+        || message.startsWith("hi ")) {
+
+    return "Hello! Welcome to the Electric Vehicle Store. How can I help you today?";
+}
 
         if (message.contains("tesla")) {
             return "You can browse Tesla vehicles from the Vehicle Catalog.";
