@@ -8,7 +8,7 @@ EECS4413-EV-Store is an e-commerce web application developed for the EECS 4413 T
 
 | Name | Student Number |
 |--------|--------|
-| Ali Shandhor | XXXXXXXX |
+| Ali Shandhor | 218932178 |
 | Johnmark Eustace | 218811042 |
 | Ashik Acharya | 219611565 |
 | Nusayba Hossain | 219971944 |
