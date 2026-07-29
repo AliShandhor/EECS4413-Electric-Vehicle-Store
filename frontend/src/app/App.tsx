@@ -9,6 +9,7 @@ import {
   cartApi,
   catalogApi,
   orderApi,
+  chatbotApi,
   type ApiVehicle,
   type CartResponse as ApiCartResponse,
   type OrderSummary,
@@ -250,11 +251,7 @@ function VehicleCard({
             >
               Add to cart
             </button>
-            {v.available && (
-                <button onClick={onAddCart} className="flex-1 text-xs text-white rounded-sm py-1.5 transition-colors hover:opacity-90" style={{ background: "#111" }}>
-                  Add to cart
-                </button>
-            )}
+          )}
           </div>
         </div>
       </div>
@@ -271,13 +268,34 @@ function Chatbot({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => vo
     { from: "bot", text: "Hi! I'm the EV Store assistant. Ask me about vehicles, deals, range, or financing." },
   ]);
 
-  function send() {
+  async function send() {
     const trimmed = input.trim();
     if (!trimmed) return;
-    const reply = getBotReply(trimmed);
-    setMessages((prev) => [...prev, { from: "user", text: trimmed }, { from: "bot", text: reply }]);
+
+    setMessages((prev) => [
+        ...prev,
+        { from: "user", text: trimmed }
+    ]);
+
     setInput("");
-  }
+
+    try {
+        const data = await chatbotApi.ask(trimmed);
+
+        setMessages((prev) => [
+            ...prev,
+            { from: "bot", text: data.response }
+        ]);
+    } catch (error) {
+        setMessages((prev) => [
+            ...prev,
+            {
+                from: "bot",
+                text: "Unable to connect to the chatbot."
+            }
+        ]);
+    }
+}
 
   return (
       <>

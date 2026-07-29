@@ -250,3 +250,11 @@ export const orderApi = {
 export const analyticsApi = {
   sales: () => request<SalesReport>("/api/analytics/sales"),
 };
+
+export const chatbotApi = {
+    ask: (message: string) =>
+        request<{ response: string }>("/api/chatbot", {
+            method: "POST",
+            body: JSON.stringify({ message }),
+        }),
+};
