@@ -720,8 +720,19 @@ export default function App() {
         {/* filters */}
         <div className="bg-white border border-border rounded-sm p-4 mb-6 mt-4">
           <div className="flex flex-wrap gap-3 items-center mb-3">
-            <input type="search" placeholder="Search brand or model" value={keyword} onChange={(event) => setKeyword(event.target.value)}
-              className="bg-white border border-border rounded px-3 py-1.5 text-sm w-48 text-foreground focus:outline-none focus:ring-1 focus:ring-accent" />
+            <input
+              type="search"
+              placeholder="Search brand or model"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void applyFilters();
+                }
+              }}
+              className="bg-white border border-border rounded px-3 py-1.5 text-sm w-48 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+            />
             <Select value={brand} onChange={setBrand} options={BRANDS} />
             <Select value={shape} onChange={setShape} options={SHAPES} />
             <Select value={year} onChange={setYear} options={YEARS} />
