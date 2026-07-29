@@ -195,6 +195,33 @@ class OrderCheckoutPaymentTest {
         assertEquals("DENIED", orderService.getOrder(order3).getStatus());
     }
 
+
+    @Test
+    @Transactional
+    void confirmOrder_clearsCartOnlyWhenPaymentIsApproved() {
+        Cart approvedCart = seedCartWithOneVehicle(9201L, 42000);
+        Long approvedOrderId = orderService.checkout(checkoutRequestFor(approvedCart)).getOrderId();
+
+        PaymentResultDTO approved = orderService.confirmOrder(approvedOrderId, validCreditCard());
+
+        assertTrue(approved.isApproved());
+        assertTrue(cartItemRepository.findByCartId(approvedCart.getId()).isEmpty(),
+                "Approved payment should clear the purchased cart items");
+
+        // Consume the second approved gateway attempt.
+        Cart secondCart = seedCartWithOneVehicle(9202L, 30000);
+        Long secondOrderId = orderService.checkout(checkoutRequestFor(secondCart)).getOrderId();
+        assertTrue(orderService.confirmOrder(secondOrderId, validCreditCard()).isApproved());
+
+        Cart deniedCart = seedCartWithOneVehicle(9203L, 24000);
+        Long deniedOrderId = orderService.checkout(checkoutRequestFor(deniedCart)).getOrderId();
+        PaymentResultDTO denied = orderService.confirmOrder(deniedOrderId, validCreditCard());
+
+        assertFalse(denied.isApproved());
+        assertFalse(cartItemRepository.findByCartId(deniedCart.getId()).isEmpty(),
+                "Denied payment must preserve the cart for a retry");
+    }
+
     private CheckoutRequest checkoutRequestFor(Cart cart) {
         CheckoutRequest request = new CheckoutRequest();
         request.setUserId(cart.getUserId());

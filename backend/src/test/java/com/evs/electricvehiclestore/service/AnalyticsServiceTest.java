@@ -186,22 +186,29 @@ class AnalyticsServiceTest {
     }
 
     @Test
-    void vehicleSalesReportExcludesPendingAndCancelledOrders() {
+    void vehicleSalesReportExcludesPendingDeniedAndCancelledOrders() {
         Order pendingOrder = order(
                 1L,
                 42000,
-                "PAYMENT_PENDING"
+                "PENDING_PAYMENT"
+        );
+
+        Order deniedOrder = order(
+                2L,
+                48000,
+                "DENIED"
         );
 
         Order cancelledOrder = order(
-                2L,
-                48000,
+                3L,
+                30000,
                 "CANCELLED"
         );
 
         when(orderRepository.findAll()).thenReturn(
                 List.of(
                         pendingOrder,
+                        deniedOrder,
                         cancelledOrder
                 )
         );
@@ -209,9 +216,9 @@ class AnalyticsServiceTest {
         SalesReportResponse report =
                 analyticsService.vehicleSalesReport();
 
-        assertEquals(2, report.totalOrders());
+        assertEquals(3, report.totalOrders());
         assertEquals(0, report.completedSales());
-        assertEquals(2, report.excludedOrders());
+        assertEquals(3, report.excludedOrders());
         assertEquals(0, report.totalVehiclesSold());
 
         assertEquals(
