@@ -213,11 +213,14 @@ export const cartApi = {
 
 export const orderApi = {
   checkout: (payload: CheckoutRequest) =>
-    request<OrderSummary>("/api/orders/checkout", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+      request<OrderSummary>("/api/orders/checkout", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  get: (orderId: number) =>
+      request<OrderSummary>(`/api/orders/${orderId}`),
   confirm: async (
+
     orderId: number,
     creditCard: {
       cardHolderName: string;
