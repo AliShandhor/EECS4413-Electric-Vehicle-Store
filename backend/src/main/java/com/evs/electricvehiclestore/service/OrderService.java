@@ -128,6 +128,15 @@ public class OrderService {
         order.setStatus(approved ? STATUS_PROCESSED : STATUS_DENIED);
         orderRepository.save(order);
 
+        // A successful purchase consumes the cart. A denied payment keeps the
+        // cart intact so the customer can correct the payment details and retry.
+        if (approved) {
+            cartRepository.findByUserId(order.getUserId())
+                    .ifPresent(cart -> cartItemRepository.deleteAll(
+                            cartItemRepository.findByCartId(cart.getId())
+                    ));
+        }
+
         String message = approved ? "Order Successfully Completed." : "Credit Card Authorization Failed.";
         return new PaymentResultDTO(order.getId(), approved, message, creditCard.maskedNumber());
     }
