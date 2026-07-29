@@ -380,7 +380,7 @@ export default function App() {
 
   // checkout
   const [form, setForm] = useState({
-    name: "", email: "", street: "", city: "", province: "", country: "Canada",
+    name: "", email: "", street: "", city: "", province: "", country: "",
     zip: "", phone: "", card: "", expiryMonth: "", expiryYear: "", cvv: "",
   });
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -1208,14 +1208,14 @@ export default function App() {
               <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Shipping Information</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[
-                  { label: "Full Name", key: "name", placeholder: "Nusayba Hossain", full: false },
-                  { label: "Email Address", key: "email", placeholder: "customer@example.com", full: false },
-                  { label: "Street Address", key: "street", placeholder: "123 Main Street", full: true },
-                  { label: "City", key: "city", placeholder: "Toronto", full: false },
-                  { label: "Province", key: "province", placeholder: "ON", full: false },
-                  { label: "Country", key: "country", placeholder: "Canada", full: false },
-                  { label: "Postal / ZIP Code", key: "zip", placeholder: "M1C 6K5", full: false },
-                  { label: "Phone Number", key: "phone", placeholder: "416-123-4567", full: true },
+                  { label: "Full Name", key: "name", placeholder: "Enter your full name", full: false },
+                  { label: "Email Address", key: "email", placeholder: "name@example.com", full: false },
+                  { label: "Street Address", key: "street", placeholder: "Enter street address", full: true },
+                  { label: "City", key: "city", placeholder: "Enter city", full: false },
+                  { label: "Province", key: "province", placeholder: "e.g., ON", full: false },
+                  { label: "Country", key: "country", placeholder: "Enter country", full: false },
+                  { label: "Postal / ZIP Code", key: "zip", placeholder: "e.g., M1C 6K5", full: false },
+                  { label: "Phone Number", key: "phone", placeholder: "e.g., 416-555-0123", full: true },
                 ].map(({ label, key, placeholder, full }) => (
                   <div key={key} className={full ? "md:col-span-2" : ""}>
                     <label className="text-xs text-muted-foreground block mb-1">{label}</label>
@@ -1234,7 +1234,7 @@ export default function App() {
               <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">Card Number</label>
-                  <input required inputMode="numeric" placeholder="4111111111111111" value={form.card}
+                  <input required inputMode="numeric" placeholder="Enter card number" value={form.card}
                     onChange={(event) => setForm({ ...form, card: event.target.value })}
                     className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
                 </div>
@@ -1253,7 +1253,7 @@ export default function App() {
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground block mb-1">CVV</label>
-                    <input required inputMode="numeric" maxLength={4} placeholder="123" value={form.cvv}
+                    <input required inputMode="numeric" maxLength={4} placeholder="Enter CVV" value={form.cvv}
                       onChange={(event) => setForm({ ...form, cvv: event.target.value })}
                       className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
