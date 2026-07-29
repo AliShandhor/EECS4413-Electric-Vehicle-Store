@@ -14,6 +14,10 @@ import {
   type OrderSummary,
   type SalesReport,
 } from "./api";
+import SignInForm from './components/ui/SignInForm';
+import SignUpForm from './components/ui/SignUpForm';
+import AccountPage from "./components/ui/AccountPage";
+
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -26,7 +30,7 @@ type Vehicle = {
 
 type CartItem = { vehicle: Vehicle; qty: number };
 type Review = { id: number; vehicleId: number; author: string; rating: number; comment: string; date: string };
-type View = "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals";
+type View = "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals" | "account";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -177,38 +181,74 @@ function VehicleCard({
   compareIds: number[]; onToggleCompare: (id: number) => void;
 }) {
   const inCompare = compareIds.includes(v.id);
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
-      <div className="bg-card border border-border rounded-sm overflow-hidden flex flex-col transition-shadow hover:shadow-md">
-        <div className="relative flex items-center justify-center h-40" style={{ background: v.color }}>
-          <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: v.iconColor + "22" }}>
-            <Zap size={32} style={{ color: v.iconColor }} fill={v.iconColor} />
-          </div>
-          {v.hotDeal && (
-              <div className="absolute top-3 left-3">
+    <div 
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={onView}
+      className="bg-card border rounded-md overflow-hidden flex flex-col cursor-pointer
+                 transition-all duration-300 ease-out
+                 active:scale-[0.98] active:bg-slate-50/50"
+      style={{
+        borderColor: isHovered ? v.iconColor : 'var(--border)',
+        transform: isHovered ? 'translateY(-6px)' : 'translateY(0px)',
+        boxShadow: isHovered 
+          ? `0 15px 30px -10px ${v.iconColor}44, 0 0 20px 4px ${v.iconColor}22` 
+          : 'none'
+      }}
+    >
+      <div className="relative flex items-center justify-center h-40" style={{ background: v.color }}>
+        <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: v.iconColor + "22" }}>
+          <Zap size={32} style={{ color: v.iconColor }} fill={v.iconColor} />
+        </div>
+        {v.hotDeal && (
+          <div className="absolute top-3 left-3">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: "#00c96b" }}>
               <Flame size={10} className="text-orange-400" /> Hot deal
             </span>
-              </div>
-          )}
-          <button
-              onClick={() => onToggleCompare(v.id)}
-              title="Compare"
-              className={`absolute top-3 right-3 w-6 h-6 rounded-sm border flex items-center justify-center transition-colors text-xs font-bold ${inCompare ? "bg-foreground text-primary-foreground border-foreground" : "bg-white/80 text-foreground border-border hover:border-foreground"}`}
-          >
-            {inCompare ? <Check size={11} /> : <GitCompare size={11} />}
-          </button>
-        </div>
+          </div>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCompare(v.id);
+          }}
+          title="Compare"
+          className={`absolute top-3 right-3 w-6 h-6 rounded-sm border flex items-center justify-center transition-all duration-100 active:scale-90 text-xs font-bold ${inCompare ? "bg-foreground text-primary-foreground border-foreground shadow-sm" : "bg-white/80 text-foreground border-border hover:border-foreground"}`}
+        >
+          {inCompare ? <Check size={11} /> : <GitCompare size={11} />}
+        </button>
+      </div>
 
-        <div className="flex flex-col flex-1 p-4 gap-2">
-          <h3 className="text-base font-semibold text-foreground leading-tight" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{v.name}</h3>
-          <p className="text-xs text-muted-foreground">{v.year} · {v.shape} · {fmtKm(v.km)}</p>
-          <p className="text-xl font-bold text-foreground mt-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{fmt(v.price)}</p>
-          <p className={`text-xs font-medium ${v.available ? "text-muted-foreground" : "text-destructive"}`}>
-            {v.available ? "Available now" : "Out of stock"}
-          </p>
-          <div className="flex gap-2 mt-auto pt-2">
-            <button onClick={onView} className="flex-1 text-xs text-foreground border border-border rounded-sm py-1.5 hover:bg-secondary transition-colors">
-              View details
+      <div className="flex flex-col flex-1 p-4 gap-2">
+        <h3 className="text-base font-semibold text-foreground leading-tight" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{v.name}</h3>
+        <p className="text-xs text-muted-foreground">{v.year} · {v.shape} · {fmtKm(v.km)}</p>
+        <p className="text-xl font-bold text-foreground mt-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{fmt(v.price)}</p>
+        <p className={`text-xs font-medium ${v.available ? "text-muted-foreground" : "text-destructive"}`}>
+          {v.available ? "Available now" : "Out of stock"}
+        </p>
+        <div className="flex gap-2 mt-auto pt-2">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onView();
+            }} 
+            className="flex-1 text-xs text-foreground border border-border rounded-sm py-1.5 hover:bg-secondary transition-all active:scale-95"
+          >
+            View details
+          </button>
+          {v.available && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddCart();
+              }} 
+              className="flex-1 text-xs text-white rounded-sm py-1.5 transition-all hover:opacity-90 active:scale-95" 
+              style={{ background: "#111" }}
+            >
+              Add to cart
             </button>
             {v.available && (
                 <button onClick={onAddCart} className="flex-1 text-xs text-white rounded-sm py-1.5 transition-colors hover:opacity-90" style={{ background: "#111" }}>
@@ -220,6 +260,8 @@ function VehicleCard({
       </div>
   );
 }
+
+
 
 // ─── Chatbot ──────────────────────────────────────────────────────────────────
 
@@ -288,6 +330,7 @@ function LoanCalculator({ onClose, defaultPrice }: { onClose: () => void; defaul
   const [rate, setRate] = useState(4.9);
   const [term, setTerm] = useState(60);
 
+  const fmt = (n: number) => "$" + n.toLocaleString();
   const principal = Math.max(0, price - deposit);
   const monthly = principal > 0
       ? (principal * (rate / 100 / 12)) / (1 - Math.pow(1 + rate / 100 / 12, -term))
@@ -343,6 +386,27 @@ function LoanCalculator({ onClose, defaultPrice }: { onClose: () => void; defaul
   );
 }
 
+function AuthShell({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background flex flex-col" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <header className="bg-white border-b border-border">
+        <div className="max-w-6xl mx-auto px-6 h-12 flex items-center">
+          <span className="text-foreground font-bold text-lg" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>EV Store</span>
+        </div>
+      </header>
+      <div className="flex-1 flex items-center justify-center px-4 py-16">
+        <div className="w-full max-w-sm">
+          <div className="mb-7">
+            <h1 className="text-4xl font-bold text-foreground mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{title}</h1>
+            <p className="text-sm text-muted-foreground">{sub}</p>
+          </div>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -377,7 +441,8 @@ export default function App() {
   const [signInForm, setSignInForm] = useState({ email: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [authError, setAuthError] = useState("");
-  const [userName, setUserName] = useState("Ali Shandhor");
+  const [userName, setUserName] = useState(""); 
+
 
   // checkout
   const [form, setForm] = useState({
@@ -566,138 +631,204 @@ export default function App() {
 
   const compareVehicles = vehicles.filter((vehicle) => compareIds.includes(vehicle.id));
 
-  // ── Nav ──────────────────────────────────────────────────────────────────────
+  // ── Nav──────────────────────────────────────
   const Nav = () => (
-      <header className="bg-white border-b border-border sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-6 h-12 flex items-center justify-between">
-          <button onClick={() => setView("catalogue")} className="text-foreground font-bold text-lg" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-            EV Store
+    <header className="bg-white border-b border-border sticky top-0 z-40 shadow-sm">
+      <div className="max-w-6xl mx-auto px-6 h-12 flex items-center justify-between">
+        <button 
+          onClick={() => setView("catalogue")} 
+          className="text-foreground font-bold text-lg transition-all duration-100 hover:opacity-80 active:scale-95" 
+          style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+        >
+          EV Store
+        </button>
+        <nav className="flex items-center gap-5 flex-wrap">
+          {/* VEHICLES TAB */}
+          <button 
+            onClick={() => setView("catalogue")} 
+            className={`text-sm font-medium px-2 py-1 rounded transition-all duration-150 active:scale-95 ${
+              view === "catalogue" 
+                ? "text-slate-900 bg-slate-100/80 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            style={{ fontFamily: "'DM Sans', sans-serif" }}
+          >
+            Vehicles
           </button>
-          <nav className="flex items-center gap-5 flex-wrap">
-            <button onClick={() => setView("catalogue")} className="text-sm text-foreground hover:text-accent transition-colors underline underline-offset-2" style={{ fontFamily: "'DM Sans', sans-serif" }}>Vehicles</button>
-            <button onClick={() => setView("hotdeals")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              <Flame size={13} className="text-orange-500" /> Hot Deals
-            </button>
-            {compareIds.length > 0 && (
-                <button onClick={() => setView("compare")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                  <GitCompare size={13} /> Compare ({compareIds.length})
-                </button>
-            )}
-            <button onClick={() => { setCalcPrice(undefined); setShowCalc(true); }} className="text-sm text-muted-foreground hover:text-foreground transition-colors" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              <Calculator size={14} />
-            </button>
-            <button onClick={() => setChatOpen(true)} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              <MessageCircle size={14} /> Chatbot
-            </button>
-            <button onClick={() => setView("cart")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              <ShoppingCart size={14} />
-              {cartCount > 0 && <span className="bg-accent text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">{cartCount}</span>}
-            </button>
-            <button onClick={() => setView("admin")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" style={{ fontFamily: "'DM Sans', sans-serif" }}>Admin</button>
-            <div className="flex items-center gap-2 pl-3 border-l border-border">
-              <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center text-white text-xs font-bold">
-                {userName.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-              </div>
-              <span className="text-sm text-foreground hidden md:block" style={{ fontFamily: "'DM Sans', sans-serif" }}>{userName}</span>
-              <button onClick={() => setView("signin")} className="text-xs border border-border rounded-sm px-2 py-1 text-muted-foreground hover:bg-secondary transition-colors flex items-center gap-1" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                <LogOut size={11} /> Logout
-              </button>
-            </div>
-          </nav>
-        </div>
-      </header>
-  );
 
-  // ── Auth pages ────────────────────────────────────────────────────────────────
-  const AuthShell = ({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) => (
-      <div className="min-h-screen bg-background flex flex-col" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <header className="bg-white border-b border-border">
-          <div className="max-w-6xl mx-auto px-6 h-12 flex items-center">
-            <span className="text-foreground font-bold text-lg" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>EV Store</span>
-          </div>
-        </header>
-        <div className="flex-1 flex items-center justify-center px-4 py-16">
-          <div className="w-full max-w-sm">
-            <div className="mb-7">
-              <h1 className="text-4xl font-bold text-foreground mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{title}</h1>
-              <p className="text-sm text-muted-foreground">{sub}</p>
+          {/* HOT DEALS TAB */}
+          <button 
+            onClick={() => setView("hotdeals")} 
+            className={`text-sm font-medium px-2 py-1 rounded flex items-center gap-1 transition-all duration-150 active:scale-95 ${
+              view === "hotdeals" 
+                ? "text-orange-600 bg-orange-50 shadow-[0_0_12px_rgba(234,88,12,0.15)] border border-orange-200" 
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            style={{ fontFamily: "'DM Sans', sans-serif" }}
+          >
+            <Flame size={13} className={view === "hotdeals" ? "text-orange-600 animate-bounce" : "text-orange-500"} /> Hot Deals
+          </button>
+
+          {/* COMPARE TAB */}
+          {compareIds.length > 0 && (
+            <button 
+              onClick={() => setView("compare")} 
+              className={`text-sm font-medium px-2 py-1 rounded flex items-center gap-1 transition-all duration-150 active:scale-95 ${
+                view === "compare" 
+                  ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              style={{ fontFamily: "'DM Sans', sans-serif" }}
+            >
+              <GitCompare size={13} /> Compare ({compareIds.length})
+            </button>
+          )}
+
+          {/* CHATBOT ICON BUTTON */}
+          <button 
+            onClick={() => setChatOpen(true)} 
+            className="text-sm text-muted-foreground hover:text-foreground p-1 rounded-md flex items-center gap-1 transition-all duration-100 hover:bg-slate-50 active:scale-95" 
+            style={{ fontFamily: "'DM Sans', sans-serif" }}
+          >
+            <MessageCircle size={14} /> Chatbot
+          </button>
+
+          {/* CART TAB */}
+          <button 
+            onClick={() => setView("cart")} 
+            className={`text-sm font-medium px-2 py-1 rounded flex items-center gap-1 transition-all duration-150 active:scale-95 ${
+              view === "cart" 
+                ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            style={{ fontFamily: "'DM Sans', sans-serif" }}
+          >
+            <ShoppingCart size={14} />
+            {cartCount > 0 && <span className="bg-accent text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">{cartCount}</span>}
+          </button>
+
+          {/* ADMIN TAB */}
+          <button 
+            onClick={() => setView("admin")} 
+            className={`text-sm font-medium px-2 py-1 rounded transition-all duration-150 active:scale-95 ${
+              view === "admin" 
+                ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            style={{ fontFamily: "'DM Sans', sans-serif" }}
+          >
+            Admin
+          </button>
+          
+          {/* MY ACCOUNT PROFILE TRIGGER COMPONENT */}
+          <button
+            onClick={() => setView("account")}
+            className={`flex items-center gap-2 pl-3 border-l border-border rounded-md px-2 py-1 transition-all duration-150 active:scale-[0.97] ${
+              view === "account"
+                ? "bg-slate-900 text-white shadow-[0_4px_15px_rgba(15,23,42,0.25)] border border-slate-800"
+                : "hover:bg-slate-100 hover:shadow-[0_0_12px_rgba(0,0,0,0.06)] text-foreground"
+            }`}
+          >
+            <div className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center pointer-events-none transition-colors ${
+              view === "account" ? "bg-white text-slate-900" : "bg-accent text-white"
+            }`}>
+              {userName.split(" ").map((n) => n).join("").slice(0, 2).toUpperCase()}
             </div>
-            {children}
-          </div>
-        </div>
+            <span className={`text-sm hidden md:block pointer-events-none ${view === "account" ? "text-white" : "text-foreground"}`} style={{ fontFamily: "'DM Sans', sans-serif" }}>{userName}</span>
+            <span 
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setUserName(""); 
+                setView("signin"); 
+              }} 
+              className={`text-xs border rounded-sm px-2 py-0.5 transition-colors flex items-center gap-1 active:scale-95 cursor-pointer ml-1 ${
+                view === "account" 
+                  ? "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white" 
+                  : "bg-white border-border text-muted-foreground hover:bg-slate-200"
+              }`}
+              style={{ fontFamily: "'DM Sans', sans-serif" }}
+            >
+              <LogOut size={11} /> Logout
+            </span>
+          </button>
+
+        </nav>
       </div>
+    </header>
   );
 
-  if (view === "signin") return (
-      <AuthShell title="Sign in" sub="Welcome back to EV Store.">
-        <form className="bg-card border border-border rounded-sm p-6 flex flex-col gap-4"
-              onSubmit={(e) => { e.preventDefault(); if (!signInForm.email || !signInForm.password) { setAuthError("Please fill in all fields."); return; } setAuthError(""); setView("catalogue"); }}>
-          {authError && <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-sm">{authError}</p>}
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Email Address</label>
-            <input required type="email" placeholder="ali@example.com" value={signInForm.email}
-                   onChange={(e) => setSignInForm({ ...signInForm, email: e.target.value })}
-                   className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
-          </div>
-          <div>
-            <div className="flex justify-between mb-1">
-              <label className="text-xs text-muted-foreground">Password</label>
-              <button type="button" className="text-xs text-accent hover:underline">Forgot password?</button>
-            </div>
-            <input required type="password" placeholder="••••••••" value={signInForm.password}
-                   onChange={(e) => setSignInForm({ ...signInForm, password: e.target.value })}
-                   className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
-          </div>
-          <button type="submit" className="w-full py-2.5 bg-foreground text-white rounded-sm font-semibold hover:opacity-90 transition-opacity mt-1"
-                  style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em", fontSize: "1rem" }}>
-            SIGN IN
-          </button>
-        </form>
-        <p className="text-sm text-center text-muted-foreground mt-5">
-          Don&apos;t have an account?{" "}
-          <button onClick={() => { setAuthError(""); setView("register"); }} className="text-foreground font-medium hover:text-accent underline underline-offset-2">Create account</button>
-        </p>
-        <p className="text-center mt-3">
-          <button onClick={() => setView("admin")} className="text-xs text-muted-foreground hover:text-foreground underline">Sign in as admin</button>
-        </p>
-      </AuthShell>
+if (view === "signin") {
+  return (
+    <AuthShell title="Sign in" sub="Welcome back to EV Store.">
+      <SignInForm
+        form={signInForm}
+        setForm={setSignInForm}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!signInForm.email || !signInForm.password) {
+            setAuthError("Please fill in all fields.");
+            return;
+          }   
+          setAuthError("");
+          const enteredEmail = signInForm.email.toLowerCase().trim();
+          
+          // Check if they are logging in with the default profile email structure
+          if (enteredEmail === "ali.shandoor@example.com" || enteredEmail === "ali@example.com") {
+            setUserName("Ali Shandoor");
+          } else {
+            const namePart = enteredEmail.split("@")[0]; 
+            const parsedName = namePart
+              .split(/[._+-]/) // Split by dots, underscores, dashes
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Capitalize words
+              .join(" "); // "John Doe"
+              
+            setUserName(parsedName || "Guest User");
+          }
+          setView("catalogue");
+        }}
+        error={authError}
+        setView={setView}
+      />
+    </AuthShell>
   );
+}
 
-  if (view === "register") return (
+
+  if (view === "register") {
+    return (
       <AuthShell title="Create account" sub="Join EV Store and start browsing.">
-        <form className="bg-card border border-border rounded-sm p-6 flex flex-col gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (registerForm.password !== registerForm.confirm) { setAuthError("Passwords do not match."); return; }
-                if (registerForm.password.length < 6) { setAuthError("Password must be at least 6 characters."); return; }
-                setAuthError(""); setUserName(registerForm.name || "Customer"); setView("catalogue");
-              }}>
-          {authError && <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-sm">{authError}</p>}
-          {[
-            { label: "Full Name", key: "name", type: "text", placeholder: "Ali Shandhor" },
-            { label: "Email Address", key: "email", type: "email", placeholder: "ali@example.com" },
-            { label: "Password", key: "password", type: "password", placeholder: "Min. 6 characters" },
-            { label: "Confirm Password", key: "confirm", type: "password", placeholder: "Repeat password" },
-          ].map(({ label, key, type, placeholder }) => (
-              <div key={key}>
-                <label className="text-xs text-muted-foreground block mb-1">{label}</label>
-                <input required type={type} placeholder={placeholder}
-                       value={registerForm[key as keyof typeof registerForm]}
-                       onChange={(e) => setRegisterForm({ ...registerForm, [key]: e.target.value })}
-                       className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
-              </div>
-          ))}
-          <button type="submit" className="w-full py-2.5 bg-foreground text-white rounded-sm font-semibold hover:opacity-90 transition-opacity mt-1"
-                  style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em", fontSize: "1rem" }}>
-            CREATE ACCOUNT
-          </button>
-        </form>
-        <p className="text-sm text-center text-muted-foreground mt-5">
-          Already have an account?{" "}
-          <button onClick={() => { setAuthError(""); setView("signin"); }} className="text-foreground font-medium hover:text-accent underline underline-offset-2">Sign in</button>
-        </p>
+        <SignUpForm
+          form={registerForm}
+          setForm={setRegisterForm}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (registerForm.password !== registerForm.confirm) {
+              setAuthError("Passwords do not match.");
+              return;
+            }
+            if (registerForm.password.length < 6) {
+              setAuthError("Password must be at least 6 characters.");
+              return;
+            }
+            setAuthError("");
+            setUserName(registerForm.name || "Customer");
+            setView("catalogue");
+          }}
+          error={authError}
+          setView={setView}
+        />
       </AuthShell>
+    );
+  }
+
+  if (view === "account") {
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Nav />
+      <AccountPage userName={userName} setView={setView} />
+    </div>
   );
+}
 
   // ── Catalogue ─────────────────────────────────────────────────────────────────
   if (view === "catalogue") return (

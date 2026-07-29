@@ -1,0 +1,33 @@
+/* Custom Global Interactive Enhancements */
+
+/* 1. Universal Hover Glows */
+.interactive-glow {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.interactive-glow:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px -5px rgba(15, 23, 42, 0.1), 0 0 15px 2px rgba(15, 23, 42, 0.06);
+  border-color: rgb(15, 23, 42) !important;
+}
+
+/* 2. Universal Click/Pressed Feedback */
+.interactive-click {
+  transition: transform 0.1s ease;
+}
+.interactive-click:active {
+  transform: scale(0.96) !important;
+}
+
+/* 3. Text/Header Link Transitions */
+.nav-link-glow {
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+}
+.nav-link-glow:hover {
+  text-shadow: 0 0 8px rgba(15, 23, 42, 0.3);
+  opacity: 1;
+}
+.nav-link-glow:active {
+  transform: scale(0.95);
+}
