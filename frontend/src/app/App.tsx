@@ -1,9 +1,18 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ShoppingCart, LogOut, ChevronDown, Zap, X, Plus, Minus, ArrowLeft,
-  BarChart2, Package, Users, TrendingUp, Check, Eye, Star, MessageCircle,
+  BarChart2, Package, TrendingUp, Check, Eye, Star, MessageCircle,
   Send, Calculator, GitCompare, Flame,
 } from "lucide-react";
+import {
+  analyticsApi,
+  cartApi,
+  catalogApi,
+  orderApi,
+  type ApiVehicle,
+  type CartResponse as ApiCartResponse,
+  type SalesReport,
+} from "./api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,6 +40,55 @@ const VEHICLES: Vehicle[] = [
   { id: 8, name: "Volkswagen ID.4", brand: "Volkswagen", shape: "SUV", year: 2022, km: 18000, country: "Germany", price: 43000, available: true, hotDeal: true, color: "#FFF1F2", iconColor: "#E11D48", range: 520, seats: 5, charge: "135 kW" },
 ];
 
+const DEMO_USER_ID = 101;
+
+type VehicleSource = {
+  id?: number;
+  vehicleId?: number;
+  brand: string;
+  model: string;
+  modelYear: number;
+  price: number;
+  mileage: number;
+  shape: string;
+  hotDeal: boolean;
+  available: boolean;
+};
+
+function toVehicle(source: VehicleSource): Vehicle {
+  const id = source.id ?? source.vehicleId ?? 0;
+  const seed = VEHICLES.find((vehicle) => vehicle.id === id)
+    ?? VEHICLES.find((vehicle) => vehicle.brand === source.brand && vehicle.name.endsWith(source.model));
+
+  return {
+    id,
+    name: `${source.brand} ${source.model}`,
+    brand: source.brand,
+    shape: source.shape,
+    year: source.modelYear,
+    km: source.mileage,
+    country: seed?.country ?? "Canada",
+    price: Number(source.price),
+    available: source.available,
+    hotDeal: source.hotDeal,
+    color: seed?.color ?? "#F3F4F6",
+    iconColor: seed?.iconColor ?? "#111827",
+    range: seed?.range ?? 450,
+    seats: seed?.seats ?? 5,
+    charge: seed?.charge ?? "150 kW",
+  };
+}
+
+function StatusBanner({ error, message, onClear }: { error: string; message: string; onClear: () => void }) {
+  if (!error && !message) return null;
+  return (
+    <div className={`mb-5 flex items-start justify-between gap-3 rounded-sm border px-4 py-3 text-sm ${error ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-accent/30 bg-accent/10 text-foreground"}`}>
+      <span>{error || message}</span>
+      <button type="button" onClick={onClear} className="opacity-70 hover:opacity-100" aria-label="Dismiss message"><X size={14} /></button>
+    </div>
+  );
+}
+
 const SEED_REVIEWS: Review[] = [
   { id: 1, vehicleId: 1, author: "Maria J.", rating: 5, comment: "Absolutely love this car. Smooth ride and incredible range for daily commutes.", date: "12 Jul 2025" },
   { id: 2, vehicleId: 1, author: "Lucas W.", rating: 4, comment: "Great value for money. Autopilot is impressive but takes some getting used to.", date: "3 Jun 2025" },
@@ -42,12 +100,6 @@ const BRANDS = ["All brands", "Tesla", "Nissan", "Hyundai", "BMW", "Kia", "Audi"
 const SHAPES = ["All shapes", "Sedan", "SUV", "Hatchback"];
 const YEARS = ["All years", "2021", "2022", "2023", "2024"];
 const SORTS = ["Featured", "Price: Low to High", "Price: High to Low", "Newest", "Lowest km"];
-
-const SALES_DATA = [
-  { month: "Jan", revenue: 420000, units: 9 }, { month: "Feb", revenue: 385000, units: 8 },
-  { month: "Mar", revenue: 610000, units: 13 }, { month: "Apr", revenue: 540000, units: 11 },
-  { month: "May", revenue: 720000, units: 15 }, { month: "Jun", revenue: 890000, units: 18 },
-];
 
 const BOT_REPLIES: Record<string, string> = {
   default: "I'm here to help! Ask me about vehicles, pricing, range, or financing.",
@@ -295,15 +347,23 @@ function LoanCalculator({ onClose, defaultPrice }: { onClose: () => void; defaul
 export default function App() {
   const [view, setView] = useState<View>("signin");
   const [selected, setSelected] = useState<Vehicle | null>(null);
+  const [vehicles, setVehicles] = useState<Vehicle[]>(VEHICLES);
+  const [catalogVehicles, setCatalogVehicles] = useState<Vehicle[]>(VEHICLES);
+  const [hotDeals, setHotDeals] = useState<Vehicle[]>(VEHICLES.filter((vehicle) => vehicle.hotDeal));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [savedItems, setSavedItems] = useState<Vehicle[]>([]);
+  const [salesReport, setSalesReport] = useState<SalesReport | null>(null);
   const [reviews, setReviews] = useState<Review[]>(SEED_REVIEWS);
   const [showCalc, setShowCalc] = useState(false);
   const [calcPrice, setCalcPrice] = useState<number | undefined>(undefined);
   const [chatOpen, setChatOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+  const [apiMessage, setApiMessage] = useState("");
 
   // filters
+  const [keyword, setKeyword] = useState("");
   const [brand, setBrand] = useState("All brands");
   const [shape, setShape] = useState("All shapes");
   const [year, setYear] = useState("All years");
@@ -319,65 +379,189 @@ export default function App() {
   const [userName, setUserName] = useState("Ali Shandhor");
 
   // checkout
-  const [form, setForm] = useState({ name: "", email: "", card: "", expiry: "", cvv: "", address: "" });
+  const [form, setForm] = useState({
+    name: "", email: "", street: "", city: "", province: "", country: "",
+    zip: "", phone: "", card: "", expiryMonth: "", expiryYear: "", cvv: "",
+  });
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [confirmedOrderId, setConfirmedOrderId] = useState<number | null>(null);
 
   // review form
   const [newReview, setNewReview] = useState({ rating: 0, comment: "" });
   const [reviewError, setReviewError] = useState("");
 
-  const cartCount = cart.reduce((s, c) => s + c.qty, 0);
-  const cartTotal = cart.reduce((s, c) => s + c.vehicle.price * c.qty, 0);
+  const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const cartTotal = cart.reduce((sum, item) => sum + item.vehicle.price * item.qty, 0);
 
-  function addToCart(v: Vehicle) {
-    setCart((prev) => {
-      const exists = prev.find((c) => c.vehicle.id === v.id);
-      if (exists) return prev.map((c) => c.vehicle.id === v.id ? { ...c, qty: c.qty + 1 } : c);
-      return [...prev, { vehicle: v, qty: 1 }];
-    });
+  function clearStatus() {
+    setApiError("");
+    setApiMessage("");
   }
 
-  function removeFromCart(id: number) { setCart((prev) => prev.filter((c) => c.vehicle.id !== id)); }
+  function syncCart(response: ApiCartResponse) {
+    setCart(response.items.map((item) => ({ vehicle: toVehicle(item), qty: item.quantity })));
+    setSavedItems(response.savedForLater.map((item) => toVehicle(item)));
+  }
 
-  function saveForLater(id: number) {
-    const item = cart.find((c) => c.vehicle.id === id);
+  useEffect(() => {
+    let active = true;
+
+    async function initialize() {
+      setIsLoading(true);
+      clearStatus();
+      const [vehicleResult, dealsResult, cartResult] = await Promise.allSettled([
+        catalogApi.list(),
+        catalogApi.hotDeals(),
+        cartApi.get(DEMO_USER_ID),
+      ]);
+
+      if (!active) return;
+      if (vehicleResult.status === "fulfilled") {
+        const mapped = vehicleResult.value.map(toVehicle);
+        setVehicles(mapped);
+        setCatalogVehicles(mapped);
+      } else {
+        setApiError(`Catalogue could not be loaded: ${vehicleResult.reason instanceof Error ? vehicleResult.reason.message : "Unknown error"}`);
+      }
+      if (dealsResult.status === "fulfilled") setHotDeals(dealsResult.value.map(toVehicle));
+      if (cartResult.status === "fulfilled") syncCart(cartResult.value);
+      setIsLoading(false);
+    }
+
+    void initialize();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (view !== "admin") return;
+    setApiError("");
+    analyticsApi.sales()
+      .then(setSalesReport)
+      .catch((error: unknown) => setApiError(error instanceof Error ? error.message : "Sales report could not be loaded"));
+  }, [view]);
+
+  async function runCartAction(action: () => Promise<ApiCartResponse>) {
+    clearStatus();
+    try {
+      const response = await action();
+      syncCart(response);
+      setApiMessage(response.message);
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Cart operation failed");
+    }
+  }
+
+  async function addToCart(vehicle: Vehicle) {
+    const existing = cart.find((item) => item.vehicle.id === vehicle.id);
+    await runCartAction(() => existing
+      ? cartApi.update(DEMO_USER_ID, vehicle.id, existing.qty + 1)
+      : cartApi.add(DEMO_USER_ID, vehicle.id, 1));
+  }
+
+  async function removeFromCart(id: number) {
+    await runCartAction(() => cartApi.remove(DEMO_USER_ID, id));
+  }
+
+  async function saveForLater(id: number) {
+    await runCartAction(() => cartApi.saveForLater(DEMO_USER_ID, id));
+  }
+
+  async function moveToCart(vehicle: Vehicle) {
+    await runCartAction(() => cartApi.moveToCart(DEMO_USER_ID, vehicle.id));
+  }
+
+  async function removeSaved(id: number) {
+    await runCartAction(() => cartApi.removeSaved(DEMO_USER_ID, id));
+  }
+
+  async function updateQty(id: number, delta: number) {
+    const item = cart.find((entry) => entry.vehicle.id === id);
     if (!item) return;
-    removeFromCart(id);
-    setSavedItems((prev) => prev.find((v) => v.id === id) ? prev : [...prev, item.vehicle]);
+    const quantity = Math.max(1, item.qty + delta);
+    if (quantity === item.qty) return;
+    await runCartAction(() => cartApi.update(DEMO_USER_ID, id, quantity));
   }
 
-  function moveToCart(v: Vehicle) {
-    setSavedItems((prev) => prev.filter((s) => s.id !== v.id));
-    addToCart(v);
+  async function openVehicle(vehicle: Vehicle) {
+    setSelected(vehicle);
+    setView("detail");
+    try {
+      setSelected(toVehicle(await catalogApi.details(vehicle.id)));
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Vehicle details could not be loaded");
+    }
   }
-  function updateQty(id: number, delta: number) {
-    setCart((prev) => prev.map((c) => c.vehicle.id === id ? { ...c, qty: Math.max(1, c.qty + delta) } : c));
+
+  async function applyFilters() {
+    clearStatus();
+    setIsLoading(true);
+    try {
+      let result: ApiVehicle[];
+      if (keyword.trim()) result = await catalogApi.search(keyword.trim());
+      else if (minPrice && maxPrice) result = await catalogApi.byPriceRange(Number(minPrice), Number(maxPrice));
+      else if (brand !== "All brands") result = await catalogApi.byBrand(brand);
+      else if (shape !== "All shapes") result = await catalogApi.byShape(shape);
+      else if (year !== "All years") result = await catalogApi.byYear(Number(year));
+      else if (sort === "Price: Low to High" || sort === "Price: High to Low") result = await catalogApi.sortPrice();
+      else if (sort === "Lowest km") result = await catalogApi.sortMileage();
+      else result = await catalogApi.list();
+
+      setCatalogVehicles(result.map(toVehicle));
+      setApplied(true);
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Catalogue filter failed");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function clearFilters() {
+    setKeyword("");
+    setBrand("All brands");
+    setShape("All shapes");
+    setYear("All years");
+    setMinPrice("");
+    setMaxPrice("");
+    setSort("Featured");
+    setApplied(false);
+    clearStatus();
+    try {
+      const result = await catalogApi.list();
+      setCatalogVehicles(result.map(toVehicle));
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Catalogue could not be refreshed");
+    }
   }
 
   function toggleCompare(id: number) {
-    setCompareIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id)
-        : prev.length < 3 ? [...prev, id] : prev
+    setCompareIds((previous) =>
+      previous.includes(id) ? previous.filter((value) => value !== id)
+        : previous.length < 3 ? [...previous, id] : previous
     );
   }
 
   const filtered = useMemo(() => {
-    let list = [...VEHICLES];
+    let list = [...catalogVehicles];
     if (applied) {
-      if (brand !== "All brands") list = list.filter((v) => v.brand === brand);
-      if (shape !== "All shapes") list = list.filter((v) => v.shape === shape);
-      if (year !== "All years") list = list.filter((v) => v.year === parseInt(year));
-      if (minPrice) list = list.filter((v) => v.price >= parseInt(minPrice));
-      if (maxPrice) list = list.filter((v) => v.price <= parseInt(maxPrice));
+      if (keyword.trim()) {
+        const normalized = keyword.trim().toLowerCase();
+        list = list.filter((vehicle) => `${vehicle.brand} ${vehicle.name}`.toLowerCase().includes(normalized));
+      }
+      if (brand !== "All brands") list = list.filter((vehicle) => vehicle.brand === brand);
+      if (shape !== "All shapes") list = list.filter((vehicle) => vehicle.shape === shape);
+      if (year !== "All years") list = list.filter((vehicle) => vehicle.year === Number(year));
+      if (minPrice) list = list.filter((vehicle) => vehicle.price >= Number(minPrice));
+      if (maxPrice) list = list.filter((vehicle) => vehicle.price <= Number(maxPrice));
     }
     if (sort === "Price: Low to High") list.sort((a, b) => a.price - b.price);
     else if (sort === "Price: High to Low") list.sort((a, b) => b.price - a.price);
     else if (sort === "Newest") list.sort((a, b) => b.year - a.year);
     else if (sort === "Lowest km") list.sort((a, b) => a.km - b.km);
     return list;
-  }, [brand, shape, year, minPrice, maxPrice, sort, applied]);
+  }, [catalogVehicles, keyword, brand, shape, year, minPrice, maxPrice, sort, applied]);
 
-  const hotDeals = VEHICLES.filter((v) => v.hotDeal);
-  const compareVehicles = VEHICLES.filter((v) => compareIds.includes(v.id));
+  const compareVehicles = vehicles.filter((vehicle) => compareIds.includes(vehicle.id));
 
   // ── Nav ──────────────────────────────────────────────────────────────────────
   const Nav = () => (
@@ -519,6 +703,7 @@ export default function App() {
       {showCalc && <LoanCalculator onClose={() => setShowCalc(false)} defaultPrice={calcPrice} />}
       <Chatbot open={chatOpen} setOpen={setChatOpen} />
       <main className="max-w-6xl mx-auto px-6 py-8">
+        <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
         <div className="flex items-start justify-between mb-2 gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
@@ -535,6 +720,19 @@ export default function App() {
         {/* filters */}
         <div className="bg-white border border-border rounded-sm p-4 mb-6 mt-4">
           <div className="flex flex-wrap gap-3 items-center mb-3">
+            <input
+              type="search"
+              placeholder="Search brand or model"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void applyFilters();
+                }
+              }}
+              className="bg-white border border-border rounded px-3 py-1.5 text-sm w-48 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+            />
             <Select value={brand} onChange={setBrand} options={BRANDS} />
             <Select value={shape} onChange={setShape} options={SHAPES} />
             <Select value={year} onChange={setYear} options={YEARS} />
@@ -546,8 +744,8 @@ export default function App() {
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">Sort</span>
             <Select value={sort} onChange={setSort} options={SORTS} />
-            <button onClick={() => setApplied(true)} className="text-sm bg-[#555555] text-white rounded-sm px-4 py-1.5 font-medium hover:bg-[#444444] transition-colors">Apply</button>
-            <button onClick={() => { setBrand("All brands"); setShape("All shapes"); setYear("All years"); setMinPrice(""); setMaxPrice(""); setSort("Featured"); setApplied(false); }}
+            <button onClick={() => void applyFilters()} className="text-sm bg-[#555555] text-white rounded-sm px-4 py-1.5 font-medium hover:bg-[#444444] transition-colors">Apply</button>
+            <button onClick={() => void clearFilters()}
               className="text-sm text-muted-foreground border border-border rounded-sm px-4 py-1.5 hover:bg-secondary transition-colors">Clear</button>
           </div>
         </div>
@@ -561,14 +759,16 @@ export default function App() {
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-20 text-muted-foreground text-sm">Loading vehicles from the server…</div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-20 text-muted-foreground text-sm">No vehicles match your filters.</div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filtered.map((v) => (
               <VehicleCard key={v.id} v={v}
-                onView={() => { setSelected(v); setView("detail"); }}
-                onAddCart={() => addToCart(v)}
+                onView={() => void openVehicle(v)}
+                onAddCart={() => void addToCart(v)}
                 compareIds={compareIds}
                 onToggleCompare={toggleCompare}
               />
@@ -585,6 +785,7 @@ export default function App() {
       <Nav />
       <Chatbot open={chatOpen} setOpen={setChatOpen} />
       <main className="max-w-6xl mx-auto px-6 py-8">
+        <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
         <div className="flex items-center gap-3 mb-2">
           <Flame size={24} className="text-orange-500" />
           <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Hot Deals</h1>
@@ -593,8 +794,8 @@ export default function App() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {hotDeals.map((v) => (
             <VehicleCard key={v.id} v={v}
-              onView={() => { setSelected(v); setView("detail"); }}
-              onAddCart={() => addToCart(v)}
+              onView={() => void openVehicle(v)}
+              onAddCart={() => void addToCart(v)}
               compareIds={compareIds}
               onToggleCompare={toggleCompare}
             />
@@ -613,7 +814,7 @@ export default function App() {
       if (newReview.rating === 0) { setReviewError("Please select a star rating."); return; }
       if (!newReview.comment.trim()) { setReviewError("Please write a comment."); return; }
       setReviews((prev) => [...prev, {
-        id: Date.now(), vehicleId: selected.id,
+        id: Date.now(), vehicleId: selected!.id,
         author: userName, rating: newReview.rating,
         comment: newReview.comment.trim(),
         date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
@@ -629,6 +830,7 @@ export default function App() {
         {showCalc && <LoanCalculator onClose={() => setShowCalc(false)} defaultPrice={calcPrice} />}
         <Chatbot open={chatOpen} setOpen={setChatOpen} />
         <main className="max-w-4xl mx-auto px-6 py-8">
+          <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
           <button onClick={() => setView("catalogue")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors">
             <ArrowLeft size={14} /> Back to catalogue
           </button>
@@ -683,12 +885,12 @@ export default function App() {
                 </div>
                 {selected.available && (
                   <div className="flex flex-col gap-3">
-                    <button onClick={() => { addToCart(selected); setView("cart"); }}
+                    <button onClick={() => { void addToCart(selected); setView("cart"); }}
                       className="w-full py-3 bg-foreground text-white rounded-sm font-semibold hover:opacity-90 transition-opacity"
                       style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em", fontSize: "1rem" }}>
                       ADD TO CART
                     </button>
-                    <button onClick={() => addToCart(selected)}
+                    <button onClick={() => void addToCart(selected)}
                       className="w-full py-3 border border-border rounded-sm text-sm font-medium text-foreground hover:bg-secondary transition-colors">
                       Add to cart &amp; continue browsing
                     </button>
@@ -825,7 +1027,7 @@ export default function App() {
                   {compareVehicles.map((v) => (
                     <td key={v.id} className="p-3 text-center">
                       {v.available && (
-                        <button onClick={() => { addToCart(v); setView("cart"); }}
+                        <button onClick={() => { void addToCart(v); setView("cart"); }}
                           className="text-xs bg-foreground text-white rounded-sm px-3 py-1.5 hover:opacity-90 transition-opacity">
                           Add to cart
                         </button>
@@ -847,6 +1049,7 @@ export default function App() {
       <Nav />
       <Chatbot open={chatOpen} setOpen={setChatOpen} />
       <main className="max-w-4xl mx-auto px-6 py-8">
+        <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Shopping Cart</h1>
           <button onClick={() => setView("catalogue")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -872,16 +1075,16 @@ export default function App() {
                     <p className="font-semibold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{item.vehicle.name}</p>
                     <p className="text-xs text-muted-foreground">{item.vehicle.year} · {item.vehicle.shape}</p>
                     <p className="text-sm font-bold text-foreground mt-1">{fmt(item.vehicle.price)}</p>
-                    <button onClick={() => saveForLater(item.vehicle.id)} className="text-xs text-muted-foreground hover:text-foreground underline mt-1 transition-colors">
+                    <button onClick={() => void saveForLater(item.vehicle.id)} className="text-xs text-muted-foreground hover:text-foreground underline mt-1 transition-colors">
                       Save for later
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => updateQty(item.vehicle.id, -1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Minus size={11} /></button>
+                    <button onClick={() => void updateQty(item.vehicle.id, -1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Minus size={11} /></button>
                     <span className="text-sm w-5 text-center">{item.qty}</span>
-                    <button onClick={() => updateQty(item.vehicle.id, 1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Plus size={11} /></button>
+                    <button onClick={() => void updateQty(item.vehicle.id, 1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Plus size={11} /></button>
                   </div>
-                  <button onClick={() => removeFromCart(item.vehicle.id)} className="text-muted-foreground hover:text-destructive ml-2 transition-colors"><X size={16} /></button>
+                  <button onClick={() => void removeFromCart(item.vehicle.id)} className="text-muted-foreground hover:text-destructive ml-2 transition-colors"><X size={16} /></button>
                 </div>
               ))}
             </div>
@@ -925,11 +1128,11 @@ export default function App() {
                     <p className="text-sm font-bold text-foreground mt-0.5">{fmt(v.price)}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button onClick={() => moveToCart(v)} className="text-xs bg-foreground text-white rounded-sm px-3 py-1.5 hover:opacity-90 transition-opacity"
+                    <button onClick={() => void moveToCart(v)} className="text-xs bg-foreground text-white rounded-sm px-3 py-1.5 hover:opacity-90 transition-opacity"
                       style={{ fontFamily: "'DM Sans', sans-serif" }}>
                       Move to cart
                     </button>
-                    <button onClick={() => setSavedItems((prev) => prev.filter((s) => s.id !== v.id))} className="text-muted-foreground hover:text-destructive transition-colors">
+                    <button onClick={() => void removeSaved(v.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                       <X size={15} />
                     </button>
                   </div>
@@ -943,6 +1146,49 @@ export default function App() {
   );
 
   // ── Checkout ───────────────────────────────────────────────────────────────────
+  async function submitCheckout(event: React.FormEvent) {
+    event.preventDefault();
+    setCheckoutError("");
+    setCheckoutLoading(true);
+
+    try {
+      const order = await orderApi.checkout({
+        userId: DEMO_USER_ID,
+        shippingInfo: {
+          street: form.street.trim(),
+          city: form.city.trim(),
+          province: form.province.trim(),
+          country: form.country.trim(),
+          zip: form.zip.trim(),
+          phone: form.phone.trim(),
+        },
+      });
+
+      const payment = await orderApi.confirm(order.orderId, {
+        cardHolderName: form.name.trim(),
+        cardNumber: form.card.replace(/\D/g, ""),
+        expiryMonth: form.expiryMonth.trim(),
+        expiryYear: form.expiryYear.trim(),
+        cvv: form.cvv.trim(),
+      });
+
+      if (!payment.approved) {
+        setCheckoutError(payment.message || "Payment was declined. Your cart has been preserved.");
+        return;
+      }
+
+      // The backend clears purchased cart items only after an approved payment.
+      syncCart(await cartApi.get(DEMO_USER_ID));
+      setConfirmedOrderId(payment.orderId);
+      setForm((current) => ({ ...current, card: "", expiryMonth: "", expiryYear: "", cvv: "" }));
+      setView("confirmed");
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Checkout could not be completed");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
   if (view === "checkout") return (
     <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <Nav />
@@ -950,20 +1196,32 @@ export default function App() {
         <button onClick={() => setView("cart")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-6"><ArrowLeft size={14} /> Back to cart</button>
         <h1 className="text-3xl font-bold text-foreground mb-6" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Checkout</h1>
 
+        {checkoutError && (
+          <div className="mb-5 rounded-sm border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {checkoutError}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <form className="lg:col-span-2 flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); setCart([]); setView("confirmed"); }}>
+          <form className="lg:col-span-2 flex flex-col gap-4" onSubmit={(event) => void submitCheckout(event)}>
             <div className="bg-card border border-border rounded-sm p-5">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Contact Information</p>
-              <div className="grid grid-cols-1 gap-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Shipping Information</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[
-                  { label: "Full Name", key: "name", placeholder: "Ali Shandhor" },
-                  { label: "Email Address", key: "email", placeholder: "ali@example.com" },
-                  { label: "Delivery Address", key: "address", placeholder: "123 Main St, Stockholm, Sweden" },
-                ].map(({ label, key, placeholder }) => (
-                  <div key={key}>
+                  { label: "Full Name", key: "name", placeholder: "Enter your full name", full: false },
+                  { label: "Email Address", key: "email", placeholder: "name@example.com", full: false },
+                  { label: "Street Address", key: "street", placeholder: "Enter street address", full: true },
+                  { label: "City", key: "city", placeholder: "Enter city", full: false },
+                  { label: "Province", key: "province", placeholder: "e.g., ON", full: false },
+                  { label: "Country", key: "country", placeholder: "Enter country", full: false },
+                  { label: "Postal / ZIP Code", key: "zip", placeholder: "e.g., M1C 6K5", full: false },
+                  { label: "Phone Number", key: "phone", placeholder: "e.g., 416-555-0123", full: true },
+                ].map(({ label, key, placeholder, full }) => (
+                  <div key={key} className={full ? "md:col-span-2" : ""}>
                     <label className="text-xs text-muted-foreground block mb-1">{label}</label>
-                    <input required placeholder={placeholder} value={form[key as keyof typeof form]}
-                      onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                    <input required type={key === "email" ? "email" : "text"} placeholder={placeholder}
+                      value={form[key as keyof typeof form]}
+                      onChange={(event) => setForm({ ...form, [key]: event.target.value })}
                       className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
                 ))}
@@ -972,42 +1230,50 @@ export default function App() {
 
             <div className="bg-card border border-border rounded-sm p-5">
               <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Payment Details</p>
+              <p className="text-xs text-muted-foreground mb-3">Card details are sent directly for payment validation and are never stored by the application.</p>
               <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">Card Number</label>
-                  <input required placeholder="4242 4242 4242 4242" value={form.card}
-                    onChange={(e) => setForm({ ...form, card: e.target.value })}
+                  <input required inputMode="numeric" placeholder="Enter card number" value={form.card}
+                    onChange={(event) => setForm({ ...form, card: event.target.value })}
                     className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="text-xs text-muted-foreground block mb-1">Expiry</label>
-                    <input required placeholder="MM / YY" value={form.expiry}
-                      onChange={(e) => setForm({ ...form, expiry: e.target.value })}
+                    <label className="text-xs text-muted-foreground block mb-1">Expiry Month</label>
+                    <input required inputMode="numeric" maxLength={2} placeholder="MM" value={form.expiryMonth}
+                      onChange={(event) => setForm({ ...form, expiryMonth: event.target.value })}
+                      className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">Expiry Year</label>
+                    <input required inputMode="numeric" maxLength={4} placeholder="YYYY" value={form.expiryYear}
+                      onChange={(event) => setForm({ ...form, expiryYear: event.target.value })}
                       className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground block mb-1">CVV</label>
-                    <input required placeholder="123" value={form.cvv}
-                      onChange={(e) => setForm({ ...form, cvv: e.target.value })}
+                    <input required inputMode="numeric" maxLength={4} placeholder="Enter CVV" value={form.cvv}
+                      onChange={(event) => setForm({ ...form, cvv: event.target.value })}
                       className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
                 </div>
               </div>
             </div>
 
-            <button type="submit" className="w-full py-3 bg-foreground text-white rounded-sm font-semibold hover:opacity-90 transition-opacity"
+            <button type="submit" disabled={checkoutLoading || cart.length === 0}
+              className="w-full py-3 bg-foreground text-white rounded-sm font-semibold hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em", fontSize: "1rem" }}>
-              PLACE ORDER · {fmt(cartTotal)}
+              {checkoutLoading ? "PROCESSING ORDER…" : `PLACE ORDER · ${fmt(cartTotal)}`}
             </button>
           </form>
 
           <div className="bg-card border border-border rounded-sm p-5 h-fit">
             <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Your order</p>
-            {cart.map((c) => (
-              <div key={c.vehicle.id} className="flex justify-between text-sm mb-2">
-                <span className="text-muted-foreground truncate mr-2">{c.vehicle.name} ×{c.qty}</span>
-                <span className="text-foreground">{fmt(c.vehicle.price * c.qty)}</span>
+            {cart.map((item) => (
+              <div key={item.vehicle.id} className="flex justify-between text-sm mb-2">
+                <span className="text-muted-foreground truncate mr-2">{item.vehicle.name} ×{item.qty}</span>
+                <span className="text-foreground">{fmt(item.vehicle.price * item.qty)}</span>
               </div>
             ))}
             <div className="border-t border-border pt-3 flex justify-between font-bold text-foreground mt-2">
@@ -1029,7 +1295,8 @@ export default function App() {
         </div>
         <h1 className="text-4xl font-bold text-foreground mb-3" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Order Confirmed!</h1>
         <p className="text-muted-foreground text-sm mb-8">
-          Thank you for your purchase, {userName}. Your electric vehicle order has been placed successfully. You will receive a confirmation email shortly.
+          Thank you for your purchase, {userName}. Your electric vehicle order has been placed successfully.
+          {confirmedOrderId && <> Your order number is <strong>#{confirmedOrderId}</strong>.</>}
         </p>
         <button onClick={() => setView("catalogue")} className="inline-flex items-center gap-2 bg-foreground text-white rounded-sm px-6 py-3 text-sm font-semibold hover:opacity-90 transition-opacity"
           style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em" }}>
@@ -1040,113 +1307,142 @@ export default function App() {
   );
 
   // ── Admin ─────────────────────────────────────────────────────────────────────
-  if (view === "admin") return (
-    <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <Nav />
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Admin Dashboard</h1>
-          <button onClick={() => setView("catalogue")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"><ArrowLeft size={14} /> Back to store</button>
-        </div>
+  function exportSalesCsv() {
+    if (!salesReport) return;
+    const rows = [
+      ["Vehicle ID", "Brand", "Model", "Units Sold", "Revenue"],
+      ...salesReport.vehicleSales.map((sale) => [sale.vehicleId, sale.brand, sale.model, sale.unitsSold, sale.revenue]),
+    ];
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "evs-sales-report.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[
-            { icon: <TrendingUp size={18} />, label: "Total Revenue", value: "$3.57M", change: "+18%" },
-            { icon: <Package size={18} />, label: "Vehicles Sold", value: "74", change: "+12%" },
-            { icon: <Users size={18} />, label: "Customers", value: "1,204", change: "+9%" },
-            { icon: <Eye size={18} />, label: "Monthly Visits", value: "28,419", change: "+23%" },
-          ].map(({ icon, label, value, change }) => (
-            <div key={label} className="bg-card border border-border rounded-sm p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-2">{icon}<span className="text-xs">{label}</span></div>
-              <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{value}</p>
-              <p className="text-xs text-accent font-medium mt-0.5">{change} this month</p>
+  if (view === "admin") {
+    const sales = salesReport?.vehicleSales ?? [];
+    const maxRevenue = Math.max(1, ...sales.map((item) => item.revenue));
+
+    return (
+      <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        <Nav />
+        <main className="max-w-6xl mx-auto px-6 py-8">
+          <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Vehicle Sales Reports</h1>
+              {salesReport && <p className="text-xs text-muted-foreground mt-1">{salesReport.message} · Generated {new Date(salesReport.generatedAt).toLocaleString()}</p>}
             </div>
-          ))}
-        </div>
+            <button onClick={() => setView("catalogue")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"><ArrowLeft size={14} /> Back to store</button>
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-card border border-border rounded-sm p-5">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Monthly Revenue (2025)</p>
-            <div className="flex items-end gap-2 h-40">
-              {SALES_DATA.map((d) => {
-                const max = Math.max(...SALES_DATA.map((x) => x.revenue));
-                const pct = (d.revenue / max) * 100;
-                return (
-                  <div key={d.month} className="flex-1 flex flex-col items-center gap-1">
-                    <div className="w-full rounded-t-sm" style={{ height: `${pct}%`, background: "#00c96b" }} />
-                    <span className="text-xs text-muted-foreground">{d.month}</span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            {[
+              { icon: <TrendingUp size={18} />, label: "Gross Revenue", value: fmt(salesReport?.grossRevenue ?? 0) },
+              { icon: <Package size={18} />, label: "Vehicles Sold", value: String(salesReport?.totalVehiclesSold ?? 0) },
+              { icon: <BarChart2 size={18} />, label: "Completed Sales", value: String(salesReport?.completedSales ?? 0) },
+              { icon: <Eye size={18} />, label: "Average Order", value: fmt(salesReport?.averageOrderValue ?? 0) },
+            ].map(({ icon, label, value }) => (
+              <div key={label} className="bg-card border border-border rounded-sm p-4">
+                <div className="flex items-center gap-2 text-muted-foreground mb-2">{icon}<span className="text-xs">{label}</span></div>
+                <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-card border border-border rounded-sm p-5">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Revenue by Vehicle</p>
+              {sales.length === 0 ? (
+                <div className="h-40 flex items-center justify-center text-sm text-muted-foreground">No completed vehicle sales yet.</div>
+              ) : (
+                <div className="flex items-end gap-3 h-48">
+                  {sales.map((item) => {
+                    const percentage = (item.revenue / maxRevenue) * 100;
+                    return (
+                      <div key={item.vehicleId} className="flex-1 min-w-0 flex flex-col items-center gap-1" title={`${item.brand} ${item.model}: ${fmt(item.revenue)}`}>
+                        <span className="text-[10px] text-muted-foreground">{fmt(item.revenue)}</span>
+                        <div className="w-full rounded-t-sm min-h-1" style={{ height: `${percentage}%`, background: "#00c96b" }} />
+                        <span className="text-[10px] text-muted-foreground truncate w-full text-center">{item.model}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-card border border-border rounded-sm p-5">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Order Status Breakdown</p>
+              <div className="space-y-3">
+                {Object.entries(salesReport?.ordersByStatus ?? {}).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No orders are available.</p>
+                ) : Object.entries(salesReport?.ordersByStatus ?? {}).map(([status, count]) => (
+                  <div key={status} className="flex items-center justify-between border-b border-border/50 pb-2 text-sm">
+                    <span className="text-foreground">{status.replace(/_/g, " ")}</span>
+                    <span className="font-semibold text-foreground">{count}</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="bg-card border border-border rounded-sm p-5">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Inventory</p>
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    {["Vehicle", "Price", "Status", ""].map((h) => (
-                      <th key={h} className="text-left py-2 text-xs text-muted-foreground font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {VEHICLES.map((v) => (
-                    <tr key={v.id} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
-                      <td className="py-2.5 text-foreground font-medium" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{v.name}</td>
-                      <td className="py-2.5 text-foreground">{fmt(v.price)}</td>
-                      <td className="py-2.5"><span className={`text-xs font-medium ${v.available ? "text-muted-foreground" : "text-destructive"}`}>{v.available ? "In Stock" : "Out"}</span></td>
-                      <td className="py-2.5"><button className="text-xs text-muted-foreground hover:text-foreground underline">Edit</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-sm p-5 mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Recent Sales</p>
-            <button className="text-xs text-accent hover:underline">Export CSV</button>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                {["Order ID", "Customer", "Vehicle", "Amount", "Date", "Status"].map((h) => (
-                  <th key={h} className="text-left py-2 text-xs text-muted-foreground font-medium">{h}</th>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { id: "#EVS-0041", customer: "Maria Johansson", vehicle: "Tesla Model 3", amount: "$42,000", date: "28 Jul 2025", status: "Completed" },
-                { id: "#EVS-0040", customer: "Lucas Weber", vehicle: "Hyundai Ioniq 5", amount: "$48,000", date: "27 Jul 2025", status: "Processing" },
-                { id: "#EVS-0039", customer: "Priya Sharma", vehicle: "Audi e-tron GT", amount: "$105,000", date: "25 Jul 2025", status: "Completed" },
-                { id: "#EVS-0038", customer: "James O'Brien", vehicle: "Nissan Leaf", amount: "$24,000", date: "24 Jul 2025", status: "Completed" },
-                { id: "#EVS-0037", customer: "Sofia Andersson", vehicle: "Tesla Model Y", amount: "$56,000", date: "22 Jul 2025", status: "Shipped" },
-              ].map((r) => (
-                <tr key={r.id} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
-                  <td className="py-2.5 text-xs text-muted-foreground font-mono">{r.id}</td>
-                  <td className="py-2.5 text-foreground">{r.customer}</td>
-                  <td className="py-2.5 text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{r.vehicle}</td>
-                  <td className="py-2.5 font-semibold text-foreground">{r.amount}</td>
-                  <td className="py-2.5 text-muted-foreground text-xs">{r.date}</td>
-                  <td className="py-2.5">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-sm ${r.status === "Completed" ? "bg-accent/10 text-accent" : r.status === "Processing" ? "bg-yellow-100 text-yellow-700" : "bg-blue-50 text-blue-600"}`}>
-                      {r.status}
-                    </span>
-                  </td>
+              </div>
+              {salesReport?.topSellingVehicle && (
+                <div className="mt-5 rounded-sm bg-accent/10 p-4">
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">Top-selling vehicle</p>
+                  <p className="font-bold text-foreground mt-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                    {salesReport.topSellingVehicle.brand} {salesReport.topSellingVehicle.model}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{salesReport.topSellingVehicle.unitsSold} unit(s) · {fmt(salesReport.topSellingVehicle.revenue)}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-card border border-border rounded-sm p-5 mt-6 overflow-x-auto">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Vehicle Sales Breakdown</p>
+              <button type="button" onClick={exportSalesCsv} disabled={!salesReport || sales.length === 0}
+                className="text-xs text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40">Export CSV</button>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  {["Vehicle ID", "Vehicle", "Units Sold", "Revenue"].map((heading) => (
+                    <th key={heading} className="text-left py-2 text-xs text-muted-foreground font-medium">{heading}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </main>
-    </div>
-  );
+              </thead>
+              <tbody>
+                {sales.map((item) => (
+                  <tr key={item.vehicleId} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
+                    <td className="py-2.5 text-xs text-muted-foreground font-mono">#{item.vehicleId}</td>
+                    <td className="py-2.5 text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{item.brand} {item.model}</td>
+                    <td className="py-2.5 text-foreground">{item.unitsSold}</td>
+                    <td className="py-2.5 font-semibold text-foreground">{fmt(item.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-card border border-border rounded-sm p-5 mt-6 overflow-x-auto">
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Current Catalogue Inventory</p>
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-border">{["Vehicle", "Price", "Mileage", "Status"].map((heading) => <th key={heading} className="text-left py-2 text-xs text-muted-foreground font-medium">{heading}</th>)}</tr></thead>
+              <tbody>{vehicles.map((vehicle) => (
+                <tr key={vehicle.id} className="border-b border-border/50">
+                  <td className="py-2.5 text-foreground">{vehicle.name}</td>
+                  <td className="py-2.5 text-foreground">{fmt(vehicle.price)}</td>
+                  <td className="py-2.5 text-muted-foreground">{fmtKm(vehicle.km)}</td>
+                  <td className={`py-2.5 text-xs font-medium ${vehicle.available ? "text-accent" : "text-destructive"}`}>{vehicle.available ? "Available" : "Unavailable"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return null;
 }
