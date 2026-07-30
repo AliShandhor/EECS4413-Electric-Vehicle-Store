@@ -23,7 +23,10 @@ public class HealthController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> health() {
         try {
-            jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+            jdbcTemplate.queryForObject(
+                    "SELECT COUNT(image_available) FROM vehicle",
+                    Long.class
+            );
             return ResponseEntity.ok(status("UP"));
         } catch (RuntimeException exception) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
