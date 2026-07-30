@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.evs.electricvehiclestore.dto.CheckoutRequest;
+import com.evs.electricvehiclestore.dto.AccessoryDTO;
 import com.evs.electricvehiclestore.dto.CreditCardDTO;
 import com.evs.electricvehiclestore.dto.OrderItemDTO;
 import com.evs.electricvehiclestore.dto.OrderSummaryDTO;
@@ -18,11 +19,13 @@ import com.evs.electricvehiclestore.dto.PaymentResultDTO;
 import com.evs.electricvehiclestore.dto.ShippingInfoDTO;
 import com.evs.electricvehiclestore.entity.Cart;
 import com.evs.electricvehiclestore.entity.CartItem;
+import com.evs.electricvehiclestore.entity.Accessory;
 import com.evs.electricvehiclestore.entity.Order;
 import com.evs.electricvehiclestore.entity.OrderItem;
 import com.evs.electricvehiclestore.entity.Vehicle;
 import com.evs.electricvehiclestore.repository.CartItemRepository;
 import com.evs.electricvehiclestore.repository.CartRepository;
+import com.evs.electricvehiclestore.repository.AccessoryRepository;
 import com.evs.electricvehiclestore.repository.OrderItemRepository;
 import com.evs.electricvehiclestore.repository.OrderRepository;
 import com.evs.electricvehiclestore.repository.VehicleRepository;
@@ -43,19 +46,22 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final PaymentService paymentService;
+    private final AccessoryRepository accessoryRepository;
 
     public OrderService(CartRepository cartRepository,
                          CartItemRepository cartItemRepository,
                          VehicleRepository vehicleRepository,
                          OrderRepository orderRepository,
                          OrderItemRepository orderItemRepository,
-                         PaymentService paymentService) {
+                         PaymentService paymentService,
+                         AccessoryRepository accessoryRepository) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.vehicleRepository = vehicleRepository;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentService = paymentService;
+        this.accessoryRepository = accessoryRepository;
     }
 
     /**
@@ -78,7 +84,8 @@ public class OrderService {
             Vehicle vehicle = vehicleRepository.findById(cartItem.getVehicleId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "Vehicle " + cartItem.getVehicleId() + " no longer exists"));
-            total += vehicle.getPrice() * cartItem.getQuantity();
+            total += (vehicle.getPrice() + accessoryTotal(cartItem.getAccessoryIds()))
+                    * cartItem.getQuantity();
         }
 
         ShippingInfoDTO shipping = request.getShippingInfo();
@@ -96,7 +103,8 @@ public class OrderService {
         for (CartItem cartItem : cartItems) {
             Vehicle vehicle = vehicleRepository.findById(cartItem.getVehicleId()).orElseThrow();
             OrderItem orderItem = new OrderItem(order.getId(), vehicle.getId(),
-                    cartItem.getQuantity(), vehicle.getPrice());
+                    cartItem.getQuantity(), vehicle.getPrice() + accessoryTotal(cartItem.getAccessoryIds()));
+            orderItem.setAccessoryIds(cartItem.getAccessoryIds());
             orderItemRepository.save(orderItem);
         }
 
@@ -158,7 +166,12 @@ public class OrderService {
                     Vehicle vehicle = vehicleRepository.findById(oi.getVehicleId()).orElse(null);
                     String brand = vehicle != null ? vehicle.getBrand() : "Unknown";
                     String model = vehicle != null ? vehicle.getModel() : "Unknown";
-                    return new OrderItemDTO(oi.getVehicleId(), brand, model, oi.getQuantity(), oi.getPrice());
+                    List<AccessoryDTO> accessories = accessoryRepository.findAllById(oi.getAccessoryIds()).stream()
+                            .map(accessory -> new AccessoryDTO(
+                                    accessory.getId(), accessory.getName(), accessory.getPrice()))
+                            .toList();
+                    return new OrderItemDTO(
+                            oi.getVehicleId(), brand, model, oi.getQuantity(), oi.getPrice(), accessories);
                 })
                 .collect(Collectors.toList());
 
@@ -172,5 +185,13 @@ public class OrderService {
 
         return new OrderSummaryDTO(order.getId(), order.getUserId(), order.getStatus(),
                 order.getTotalAmount(), order.getOrderDate(), shippingInfo, itemDTOs);
+    }
+
+    private double accessoryTotal(java.util.Set<Long> accessoryIds) {
+        if (accessoryIds == null || accessoryIds.isEmpty()) return 0.0;
+        return accessoryRepository.findAllById(accessoryIds).stream()
+                .filter(Accessory::isAvailable)
+                .mapToDouble(Accessory::getPrice)
+                .sum();
     }
 }

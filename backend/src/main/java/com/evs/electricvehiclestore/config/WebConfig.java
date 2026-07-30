@@ -7,6 +7,17 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    private final AuthUsageInterceptor authUsageInterceptor;
+
+    public WebConfig(AuthUsageInterceptor authUsageInterceptor) {
+        this.authUsageInterceptor = authUsageInterceptor;
+    }
+
+    @Override
+    public void addInterceptors(org.springframework.web.servlet.config.annotation.InterceptorRegistry registry) {
+        registry.addInterceptor(authUsageInterceptor).addPathPatterns("/api/**");
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")

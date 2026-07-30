@@ -231,10 +231,6 @@ public class AnalyticsService {
         );
     }
 
-    public String usageReport() {
-        return "Usage report not implemented yet";
-    }
-
     private Map<String, Long> createStatusBreakdown(
             List<Order> orders
     ) {

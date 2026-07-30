@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ShoppingCart, LogOut, ChevronDown, Zap, X, Plus, Minus, ArrowLeft,
   BarChart2, Package, TrendingUp, Check, Eye, Star, MessageCircle,
@@ -6,13 +6,20 @@ import {
 } from "lucide-react";
 import {
   analyticsApi,
+  accessoryApi,
+  authApi,
+  authStorage,
+  chatApi,
   cartApi,
   catalogApi,
   orderApi,
+  type Accessory,
   type ApiVehicle,
+  type AuthUser,
   type CartResponse as ApiCartResponse,
   type OrderSummary,
   type SalesReport,
+  type UsageReport,
 } from "./api";
 import SignInForm from './components/ui/SignInForm';
 import SignUpForm from './components/ui/SignUpForm';
@@ -28,9 +35,42 @@ type Vehicle = {
   seats: number; charge: string;
 };
 
-type CartItem = { vehicle: Vehicle; qty: number };
+type CartItem = {
+  vehicle: Vehicle;
+  qty: number;
+  accessories: Array<{ id: number; name: string; description: string; price: number }>;
+  lineTotal: number;
+};
 type Review = { id: number; vehicleId: number; author: string; rating: number; comment: string; date: string };
 type View = "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals" | "account";
+type NavigationTarget = { view: View; vehicleId?: number };
+
+const VIEWS: View[] = ["signin", "register", "catalogue", "detail", "cart", "checkout", "confirmed", "admin", "compare", "hotdeals", "account"];
+
+function isView(value: unknown): value is View {
+  return typeof value === "string" && VIEWS.includes(value as View);
+}
+
+function navigationUrl(view: View, vehicleId?: number): string {
+  return view === "detail" && vehicleId ? `#/vehicles/${vehicleId}` : `#/${view}`;
+}
+
+function readNavigation(state: unknown = window.history.state): NavigationTarget {
+  if (state && typeof state === "object") {
+    const candidate = state as { evs?: boolean; view?: unknown; vehicleId?: unknown };
+    if (candidate.evs && isView(candidate.view)) {
+      return {
+        view: candidate.view,
+        vehicleId: typeof candidate.vehicleId === "number" ? candidate.vehicleId : undefined,
+      };
+    }
+  }
+
+  const route = window.location.hash.replace(/^#\/?/, "");
+  const vehicleMatch = route.match(/^vehicles\/(\d+)$/);
+  if (vehicleMatch) return { view: "detail", vehicleId: Number(vehicleMatch[1]) };
+  return isView(route) ? { view: route } : { view: "signin" };
+}
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -44,8 +84,6 @@ const VEHICLES: Vehicle[] = [
   { id: 7, name: "Audi e-tron GT", brand: "Audi", shape: "Sedan", year: 2024, km: 2000, country: "Germany", price: 105000, available: true, hotDeal: false, color: "#FDF4FF", iconColor: "#A855F7", range: 488, seats: 4, charge: "270 kW" },
   { id: 8, name: "Volkswagen ID.4", brand: "Volkswagen", shape: "SUV", year: 2022, km: 18000, country: "Germany", price: 43000, available: true, hotDeal: true, color: "#FFF1F2", iconColor: "#E11D48", range: 520, seats: 5, charge: "135 kW" },
 ];
-
-const DEMO_USER_ID = 101;
 
 type VehicleSource = {
   id?: number;
@@ -250,11 +288,7 @@ function VehicleCard({
             >
               Add to cart
             </button>
-            {v.available && (
-                <button onClick={onAddCart} className="flex-1 text-xs text-white rounded-sm py-1.5 transition-colors hover:opacity-90" style={{ background: "#111" }}>
-                  Add to cart
-                </button>
-            )}
+          )}
           </div>
         </div>
       </div>
@@ -267,16 +301,40 @@ function VehicleCard({
 
 function Chatbot({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
   const [input, setInput] = useState("");
+  const [isReplying, setIsReplying] = useState(false);
   const [messages, setMessages] = useState<{ from: "user" | "bot"; text: string }[]>([
     { from: "bot", text: "Hi! I'm the EV Store assistant. Ask me about vehicles, deals, range, or financing." },
   ]);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  function send() {
-    const trimmed = input.trim();
-    if (!trimmed) return;
-    const reply = getBotReply(trimmed);
-    setMessages((prev) => [...prev, { from: "user", text: trimmed }, { from: "bot", text: reply }]);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isReplying]);
+
+  async function send(suggestedMessage?: string) {
+    const trimmed = (suggestedMessage ?? input).trim();
+    if (!trimmed || isReplying) return;
+
+    const history = messages.slice(1).map((item) => ({
+      role: item.from === "user" ? "user" as const : "assistant" as const,
+      content: item.text,
+    }));
+
+    setMessages((previous) => [...previous, { from: "user", text: trimmed }]);
     setInput("");
+    setIsReplying(true);
+
+    try {
+      const answer = await chatApi.ask(trimmed, history);
+      setMessages((previous) => [...previous, { from: "bot", text: answer.response }]);
+    } catch {
+      setMessages((previous) => [
+        ...previous,
+        { from: "bot", text: `${getBotReply(trimmed)} The live assistant is temporarily unavailable.` },
+      ]);
+    } finally {
+      setIsReplying(false);
+    }
   }
 
   return (
@@ -298,21 +356,46 @@ function Chatbot({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => vo
               <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
                 {messages.map((m, i) => (
                     <div key={i} className={`flex ${m.from === "user" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[80%] text-xs px-3 py-2 rounded-sm leading-relaxed ${m.from === "user" ? "bg-foreground text-white" : "bg-secondary text-foreground"}`}>
+                      <div className={`max-w-[85%] whitespace-pre-line text-xs px-3 py-2 rounded-sm leading-relaxed ${m.from === "user" ? "bg-foreground text-white" : "bg-secondary text-foreground"}`}>
                         {m.text}
                       </div>
                     </div>
                 ))}
+                {messages.length === 1 && (
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {[
+                        "Recommend an SUV under $60,000",
+                        "What are today’s hot deals?",
+                        "How do accessories work?",
+                      ].map((suggestion) => (
+                          <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => void send(suggestion)}
+                              className="text-[10px] text-left border border-border rounded-sm px-2 py-1.5 text-muted-foreground hover:border-foreground hover:text-foreground"
+                          >
+                            {suggestion}
+                          </button>
+                      ))}
+                    </div>
+                )}
+                {isReplying && (
+                    <div className="flex justify-start">
+                      <div className="bg-secondary text-muted-foreground text-xs px-3 py-2 rounded-sm">Thinking…</div>
+                    </div>
+                )}
+                <div ref={messagesEndRef} />
               </div>
               <div className="border-t border-border p-2 flex gap-2">
                 <input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && send()}
+                    onKeyDown={(e) => e.key === "Enter" && void send()}
                     placeholder="Ask a question…"
+                    disabled={isReplying}
                     className="flex-1 text-xs border border-border rounded-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent bg-white"
                 />
-                <button onClick={send} className="bg-foreground text-white rounded-sm px-2 py-1.5 hover:opacity-90 transition-opacity">
+                <button disabled={isReplying || !input.trim()} onClick={() => void send()} className="bg-foreground text-white rounded-sm px-2 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-40">
                   <Send size={13} />
                 </button>
               </div>
@@ -410,8 +493,12 @@ function AuthShell({ title, sub, children }: { title: string; sub: string; child
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [view, setView] = useState<View>("signin");
-  const [selected, setSelected] = useState<Vehicle | null>(null);
+  const [view, setView] = useState<View>(() => readNavigation().view);
+  const [selected, setSelected] = useState<Vehicle | null>(() => {
+    const vehicleId = readNavigation().vehicleId;
+    return VEHICLES.find((vehicle) => vehicle.id === vehicleId) ?? null;
+  });
+  const historyInitialized = useRef(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>(VEHICLES);
   const [catalogVehicles, setCatalogVehicles] = useState<Vehicle[]>(VEHICLES);
   const [hotDeals, setHotDeals] = useState<Vehicle[]>(VEHICLES.filter((vehicle) => vehicle.hotDeal));
@@ -419,6 +506,8 @@ export default function App() {
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [savedItems, setSavedItems] = useState<Vehicle[]>([]);
   const [salesReport, setSalesReport] = useState<SalesReport | null>(null);
+  const [usageReport, setUsageReport] = useState<UsageReport | null>(null);
+  const [accessories, setAccessories] = useState<Accessory[]>([]);
   const [reviews, setReviews] = useState<Review[]>(SEED_REVIEWS);
   const [showCalc, setShowCalc] = useState(false);
   const [calcPrice, setCalcPrice] = useState<number | undefined>(undefined);
@@ -441,7 +530,15 @@ export default function App() {
   const [signInForm, setSignInForm] = useState({ email: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [authError, setAuthError] = useState("");
-  const [userName, setUserName] = useState(""); 
+  const [authLoading, setAuthLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => authStorage.user());
+  const [userName, setUserName] = useState(() => authStorage.user()?.fullName ?? "");
+
+  const [newVehicle, setNewVehicle] = useState({
+    brand: "", model: "", modelYear: String(new Date().getFullYear()), price: "",
+    mileage: "0", shape: "SUV", hotDeal: false, available: true,
+  });
+  const [vehicleCreateLoading, setVehicleCreateLoading] = useState(false);
 
 
   // checkout
@@ -459,8 +556,45 @@ export default function App() {
   const [newReview, setNewReview] = useState({ rating: 0, comment: "" });
   const [reviewError, setReviewError] = useState("");
 
+  useEffect(() => {
+    const vehicleId = view === "detail" ? selected?.id : undefined;
+    const url = navigationUrl(view, vehicleId);
+    const state = { evs: true, view, vehicleId };
+
+    if (!historyInitialized.current) {
+      window.history.replaceState(state, "", url);
+      historyInitialized.current = true;
+    } else if (window.location.hash !== url) {
+      window.history.pushState(state, "", url);
+    } else {
+      window.history.replaceState(state, "", url);
+    }
+  }, [view, selected?.id]);
+
+  useEffect(() => {
+    function restoreFromHistory(event: PopStateEvent) {
+      const target = readNavigation(event.state);
+
+      if (target.view === "detail" && target.vehicleId) {
+        const vehicle = vehicles.find((item) => item.id === target.vehicleId);
+        if (vehicle) {
+          setSelected(vehicle);
+        } else {
+          void catalogApi.details(target.vehicleId)
+              .then((result) => setSelected(toVehicle(result)))
+              .catch(() => setView("catalogue"));
+        }
+      }
+
+      setView(target.view);
+    }
+
+    window.addEventListener("popstate", restoreFromHistory);
+    return () => window.removeEventListener("popstate", restoreFromHistory);
+  }, [vehicles]);
+
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
-  const cartTotal = cart.reduce((sum, item) => sum + item.vehicle.price * item.qty, 0);
+  const cartTotal = cart.reduce((sum, item) => sum + item.lineTotal, 0);
 
   function clearStatus() {
     setApiError("");
@@ -468,7 +602,12 @@ export default function App() {
   }
 
   function syncCart(response: ApiCartResponse) {
-    setCart(response.items.map((item) => ({ vehicle: toVehicle(item), qty: item.quantity })));
+    setCart(response.items.map((item) => ({
+      vehicle: toVehicle(item),
+      qty: item.quantity,
+      accessories: item.accessories ?? [],
+      lineTotal: item.lineTotal,
+    })));
     setSavedItems(response.savedForLater.map((item) => toVehicle(item)));
   }
 
@@ -478,10 +617,10 @@ export default function App() {
     async function initialize() {
       setIsLoading(true);
       clearStatus();
-      const [vehicleResult, dealsResult, cartResult] = await Promise.allSettled([
+      const [vehicleResult, dealsResult, accessoryResult] = await Promise.allSettled([
         catalogApi.list(),
         catalogApi.hotDeals(),
-        cartApi.get(DEMO_USER_ID),
+        accessoryApi.list(),
       ]);
 
       if (!active) return;
@@ -493,20 +632,57 @@ export default function App() {
         setApiError(`Catalogue could not be loaded: ${vehicleResult.reason instanceof Error ? vehicleResult.reason.message : "Unknown error"}`);
       }
       if (dealsResult.status === "fulfilled") setHotDeals(dealsResult.value.map(toVehicle));
-      if (cartResult.status === "fulfilled") syncCart(cartResult.value);
+      if (accessoryResult.status === "fulfilled") setAccessories(accessoryResult.value);
+      if (currentUser) {
+        try {
+          syncCart(await cartApi.get(currentUser.id));
+        } catch (error) {
+          setApiError(error instanceof Error ? error.message : "Cart could not be loaded");
+        }
+      } else {
+        setCart([]);
+        setSavedItems([]);
+      }
       setIsLoading(false);
     }
 
     void initialize();
     return () => { active = false; };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      if (view !== "signin" && view !== "register") setView("signin");
+      return;
+    }
+    void authApi.validate().then(({ valid }) => {
+      if (!valid) {
+        authStorage.clear();
+        setCurrentUser(null);
+        setUserName("");
+        setView("signin");
+      }
+    }).catch(() => {
+      authStorage.clear();
+      setCurrentUser(null);
+      setUserName("");
+      setView("signin");
+    });
   }, []);
+
+  useEffect(() => {
+    if (view === "admin" && currentUser?.role !== "ADMIN") setView("catalogue");
+  }, [view, currentUser?.role]);
 
   useEffect(() => {
     if (view !== "admin") return;
     setApiError("");
-    analyticsApi.sales()
-        .then(setSalesReport)
-        .catch((error: unknown) => setApiError(error instanceof Error ? error.message : "Sales report could not be loaded"));
+    Promise.all([analyticsApi.sales(), analyticsApi.usage()])
+        .then(([sales, usage]) => {
+          setSalesReport(sales);
+          setUsageReport(usage);
+        })
+        .catch((error: unknown) => setApiError(error instanceof Error ? error.message : "Admin reports could not be loaded"));
   }, [view]);
 
   async function runCartAction(action: () => Promise<ApiCartResponse>) {
@@ -521,26 +697,27 @@ export default function App() {
   }
 
   async function addToCart(vehicle: Vehicle) {
+    if (!currentUser) return setView("signin");
     const existing = cart.find((item) => item.vehicle.id === vehicle.id);
     await runCartAction(() => existing
-        ? cartApi.update(DEMO_USER_ID, vehicle.id, existing.qty + 1)
-        : cartApi.add(DEMO_USER_ID, vehicle.id, 1));
+        ? cartApi.update(currentUser.id, vehicle.id, existing.qty + 1)
+        : cartApi.add(currentUser.id, vehicle.id, 1));
   }
 
   async function removeFromCart(id: number) {
-    await runCartAction(() => cartApi.remove(DEMO_USER_ID, id));
+    if (currentUser) await runCartAction(() => cartApi.remove(currentUser.id, id));
   }
 
   async function saveForLater(id: number) {
-    await runCartAction(() => cartApi.saveForLater(DEMO_USER_ID, id));
+    if (currentUser) await runCartAction(() => cartApi.saveForLater(currentUser.id, id));
   }
 
   async function moveToCart(vehicle: Vehicle) {
-    await runCartAction(() => cartApi.moveToCart(DEMO_USER_ID, vehicle.id));
+    if (currentUser) await runCartAction(() => cartApi.moveToCart(currentUser.id, vehicle.id));
   }
 
   async function removeSaved(id: number) {
-    await runCartAction(() => cartApi.removeSaved(DEMO_USER_ID, id));
+    if (currentUser) await runCartAction(() => cartApi.removeSaved(currentUser.id, id));
   }
 
   async function updateQty(id: number, delta: number) {
@@ -548,7 +725,105 @@ export default function App() {
     if (!item) return;
     const quantity = Math.max(1, item.qty + delta);
     if (quantity === item.qty) return;
-    await runCartAction(() => cartApi.update(DEMO_USER_ID, id, quantity));
+    if (currentUser) await runCartAction(() => cartApi.update(currentUser.id, id, quantity));
+  }
+
+  async function toggleAccessory(vehicleId: number, accessoryId: number, selected: boolean) {
+    if (!currentUser) return;
+    await runCartAction(() => selected
+        ? cartApi.removeAccessory(currentUser.id, vehicleId, accessoryId)
+        : cartApi.addAccessory(currentUser.id, vehicleId, accessoryId));
+  }
+
+  async function handleSignIn(event: React.FormEvent) {
+    event.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const session = await authApi.login(signInForm.email.trim(), signInForm.password);
+      authStorage.save(session);
+      setCurrentUser(session.user);
+      setUserName(session.user.fullName);
+      setView(session.user.role === "ADMIN" ? "admin" : "catalogue");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Sign in failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleRegister(event: React.FormEvent) {
+    event.preventDefault();
+    if (registerForm.password !== registerForm.confirm) {
+      setAuthError("Passwords do not match.");
+      return;
+    }
+    if (registerForm.password.length < 8) {
+      setAuthError("Password must be at least 8 characters.");
+      return;
+    }
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      await authApi.register({
+        fullName: registerForm.name.trim(),
+        email: registerForm.email.trim(),
+        password: registerForm.password,
+      });
+      const session = await authApi.login(registerForm.email.trim(), registerForm.password);
+      authStorage.save(session);
+      setCurrentUser(session.user);
+      setUserName(session.user.fullName);
+      setView("catalogue");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Registration failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function signOut() {
+    try {
+      await authApi.logout();
+    } catch {
+      // Local credentials are still cleared if the server is unavailable.
+    }
+    authStorage.clear();
+    setCurrentUser(null);
+    setUserName("");
+    setCart([]);
+    setSavedItems([]);
+    setView("signin");
+  }
+
+  async function createVehicle(event: React.FormEvent) {
+    event.preventDefault();
+    setVehicleCreateLoading(true);
+    clearStatus();
+    try {
+      const created = await catalogApi.add({
+        brand: newVehicle.brand.trim(),
+        model: newVehicle.model.trim(),
+        modelYear: Number(newVehicle.modelYear),
+        price: Number(newVehicle.price),
+        mileage: Number(newVehicle.mileage),
+        shape: newVehicle.shape,
+        hotDeal: newVehicle.hotDeal,
+        available: newVehicle.available,
+      });
+      const mapped = toVehicle(created);
+      setVehicles((items) => [...items, mapped]);
+      setCatalogVehicles((items) => [...items, mapped]);
+      setApiMessage(`${mapped.name} was added to inventory`);
+      setNewVehicle({
+        brand: "", model: "", modelYear: String(new Date().getFullYear()), price: "",
+        mileage: "0", shape: "SUV", hotDeal: false, available: true,
+      });
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Vehicle could not be added");
+    } finally {
+      setVehicleCreateLoading(false);
+    }
   }
 
   async function openVehicle(vehicle: Vehicle) {
@@ -707,18 +982,19 @@ export default function App() {
             {cartCount > 0 && <span className="bg-accent text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">{cartCount}</span>}
           </button>
 
-          {/* ADMIN TAB */}
-          <button 
-            onClick={() => setView("admin")} 
-            className={`text-sm font-medium px-2 py-1 rounded transition-all duration-150 active:scale-95 ${
-              view === "admin" 
-                ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            style={{ fontFamily: "'DM Sans', sans-serif" }}
-          >
-            Admin
-          </button>
+          {currentUser?.role === "ADMIN" && (
+            <button
+              onClick={() => setView("admin")}
+              className={`text-sm font-medium px-2 py-1 rounded transition-all duration-150 active:scale-95 ${
+                view === "admin"
+                  ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              style={{ fontFamily: "'DM Sans', sans-serif" }}
+            >
+              Admin
+            </button>
+          )}
           
           {/* MY ACCOUNT PROFILE TRIGGER COMPONENT */}
           <button
@@ -737,9 +1013,8 @@ export default function App() {
             <span className={`text-sm hidden md:block pointer-events-none ${view === "account" ? "text-white" : "text-foreground"}`} style={{ fontFamily: "'DM Sans', sans-serif" }}>{userName}</span>
             <span 
               onClick={(e) => { 
-                e.stopPropagation(); 
-                setUserName(""); 
-                setView("signin"); 
+                e.stopPropagation();
+                void signOut();
               }} 
               className={`text-xs border rounded-sm px-2 py-0.5 transition-colors flex items-center gap-1 active:scale-95 cursor-pointer ml-1 ${
                 view === "account" 
@@ -763,32 +1038,11 @@ if (view === "signin") {
       <SignInForm
         form={signInForm}
         setForm={setSignInForm}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!signInForm.email || !signInForm.password) {
-            setAuthError("Please fill in all fields.");
-            return;
-          }   
-          setAuthError("");
-          const enteredEmail = signInForm.email.toLowerCase().trim();
-          
-          // Check if they are logging in with the default profile email structure
-          if (enteredEmail === "ali.shandoor@example.com" || enteredEmail === "ali@example.com") {
-            setUserName("Ali Shandoor");
-          } else {
-            const namePart = enteredEmail.split("@")[0]; 
-            const parsedName = namePart
-              .split(/[._+-]/) // Split by dots, underscores, dashes
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Capitalize words
-              .join(" "); // "John Doe"
-              
-            setUserName(parsedName || "Guest User");
-          }
-          setView("catalogue");
-        }}
+        onSubmit={(event) => void handleSignIn(event)}
         error={authError}
         setView={setView}
       />
+      {authLoading && <p className="text-xs text-muted-foreground text-center mt-3">Signing in…</p>}
     </AuthShell>
   );
 }
@@ -800,23 +1054,11 @@ if (view === "signin") {
         <SignUpForm
           form={registerForm}
           setForm={setRegisterForm}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (registerForm.password !== registerForm.confirm) {
-              setAuthError("Passwords do not match.");
-              return;
-            }
-            if (registerForm.password.length < 6) {
-              setAuthError("Password must be at least 6 characters.");
-              return;
-            }
-            setAuthError("");
-            setUserName(registerForm.name || "Customer");
-            setView("catalogue");
-          }}
+          onSubmit={(event) => void handleRegister(event)}
           error={authError}
           setView={setView}
         />
+        {authLoading && <p className="text-xs text-muted-foreground text-center mt-3">Creating your account…</p>}
       </AuthShell>
     );
   }
@@ -1201,24 +1443,50 @@ if (view === "signin") {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 flex flex-col gap-3">
                   {cart.map((item) => (
-                      <div key={item.vehicle.id} className="bg-card border border-border rounded-sm p-4 flex items-center gap-4">
-                        <div className="w-16 h-16 rounded-sm flex items-center justify-center flex-shrink-0" style={{ background: item.vehicle.color }}>
-                          <Zap size={24} style={{ color: item.vehicle.iconColor }} fill={item.vehicle.iconColor} />
+                      <div key={item.vehicle.id} className="bg-card border border-border rounded-sm p-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-16 h-16 rounded-sm flex items-center justify-center flex-shrink-0" style={{ background: item.vehicle.color }}>
+                            <Zap size={24} style={{ color: item.vehicle.iconColor }} fill={item.vehicle.iconColor} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{item.vehicle.name}</p>
+                            <p className="text-xs text-muted-foreground">{item.vehicle.year} · {item.vehicle.shape}</p>
+                            <p className="text-sm font-bold text-foreground mt-1">{fmt(item.lineTotal)}</p>
+                            <button onClick={() => void saveForLater(item.vehicle.id)} className="text-xs text-muted-foreground hover:text-foreground underline mt-1 transition-colors">
+                              Save for later
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => void updateQty(item.vehicle.id, -1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Minus size={11} /></button>
+                            <span className="text-sm w-5 text-center">{item.qty}</span>
+                            <button onClick={() => void updateQty(item.vehicle.id, 1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Plus size={11} /></button>
+                          </div>
+                          <button onClick={() => void removeFromCart(item.vehicle.id)} className="text-muted-foreground hover:text-destructive ml-2 transition-colors"><X size={16} /></button>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{item.vehicle.name}</p>
-                          <p className="text-xs text-muted-foreground">{item.vehicle.year} · {item.vehicle.shape}</p>
-                          <p className="text-sm font-bold text-foreground mt-1">{fmt(item.vehicle.price)}</p>
-                          <button onClick={() => void saveForLater(item.vehicle.id)} className="text-xs text-muted-foreground hover:text-foreground underline mt-1 transition-colors">
-                            Save for later
-                          </button>
+                        <div className="border-t border-border/60 mt-4 pt-3">
+                          <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Vehicle accessories</p>
+                          <div className="flex flex-wrap gap-2">
+                            {accessories.map((accessory) => {
+                              const chosen = item.accessories.some((selectedAccessory) => selectedAccessory.id === accessory.id);
+                              return (
+                                  <button
+                                      key={accessory.id}
+                                      type="button"
+                                      onClick={() => void toggleAccessory(item.vehicle.id, accessory.id, chosen)}
+                                      className={`text-xs rounded-sm border px-2.5 py-1.5 transition-colors ${
+                                        chosen
+                                            ? "bg-accent/10 border-accent text-foreground"
+                                            : "bg-white border-border text-muted-foreground hover:border-foreground"
+                                      }`}
+                                      title={accessory.description}
+                                  >
+                                    {chosen ? <Check size={11} className="inline mr-1" /> : <Plus size={11} className="inline mr-1" />}
+                                    {accessory.name} · {fmt(accessory.price)}
+                                  </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => void updateQty(item.vehicle.id, -1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Minus size={11} /></button>
-                          <span className="text-sm w-5 text-center">{item.qty}</span>
-                          <button onClick={() => void updateQty(item.vehicle.id, 1)} className="w-6 h-6 border border-border rounded-sm flex items-center justify-center hover:bg-secondary"><Plus size={11} /></button>
-                        </div>
-                        <button onClick={() => void removeFromCart(item.vehicle.id)} className="text-muted-foreground hover:text-destructive ml-2 transition-colors"><X size={16} /></button>
                       </div>
                   ))}
                 </div>
@@ -1229,7 +1497,7 @@ if (view === "signin") {
                     {cart.map((c) => (
                         <div key={c.vehicle.id} className="flex justify-between text-sm">
                           <span className="text-muted-foreground truncate mr-2">{c.vehicle.name} ×{c.qty}</span>
-                          <span className="text-foreground font-medium">{fmt(c.vehicle.price * c.qty)}</span>
+                          <span className="text-foreground font-medium">{fmt(c.lineTotal)}</span>
                         </div>
                     ))}
                   </div>
@@ -1323,8 +1591,9 @@ if (view === "signin") {
     setCheckoutLoading(true);
 
     try {
+      if (!currentUser) throw new Error("Please sign in before checking out");
       const order = await orderApi.checkout({
-        userId: DEMO_USER_ID,
+        userId: currentUser.id,
         shippingInfo: {
           street: form.street.trim(),
           city: form.city.trim(),
@@ -1357,7 +1626,7 @@ if (view === "signin") {
       }
 
       // The backend clears purchased cart items only after an approved payment.
-      syncCart(await cartApi.get(DEMO_USER_ID));
+      syncCart(await cartApi.get(currentUser.id));
       setConfirmedOrderId(payment.orderId);
       setForm((current) => ({ ...current, card: "", expiryMonth: "", expiryYear: "", cvv: "" }));
       setFormErrors({});
@@ -1458,7 +1727,7 @@ if (view === "signin") {
               {cart.map((item) => (
                   <div key={item.vehicle.id} className="flex justify-between text-sm mb-2">
                     <span className="text-muted-foreground truncate mr-2">{item.vehicle.name} ×{item.qty}</span>
-                    <span className="text-foreground">{fmt(item.vehicle.price * item.qty)}</span>
+                    <span className="text-foreground">{fmt(item.lineTotal)}</span>
                   </div>
               ))}
               <div className="border-t border-border pt-3 flex justify-between font-bold text-foreground mt-2">
@@ -1490,7 +1759,7 @@ if (view === "signin") {
                 {confirmedOrder.items.map((item) => (
                     <div key={item.vehicleId} className="flex justify-between text-sm mb-2">
                       <span className="text-muted-foreground">{item.brand} {item.model} ×{item.quantity}</span>
-                      <span className="text-foreground">{fmt(item.price * item.quantity)}</span>
+                      <span className="text-foreground">{fmt(item.unitPrice * item.quantity)}</span>
                     </div>
                 ))}
                 <div className="border-t border-border pt-3 flex justify-between font-bold text-foreground mt-2 mb-4">
@@ -1539,10 +1808,103 @@ if (view === "signin") {
             <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Vehicle Sales Reports</h1>
-                {salesReport && <p className="text-xs text-muted-foreground mt-1">{salesReport.message} · Generated {new Date(salesReport.generatedAt).toLocaleString()}</p>}
+                <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Administrator Dashboard</h1>
+                <p className="text-xs text-muted-foreground mt-1">Inventory, vehicle sales, and application usage</p>
               </div>
               <button onClick={() => setView("catalogue")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"><ArrowLeft size={14} /> Back to store</button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <form onSubmit={(event) => void createVehicle(event)} className="bg-card border border-border rounded-sm p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Plus size={16} className="text-accent" />
+                  <h2 className="font-semibold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Add New Vehicle</h2>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: "brand", label: "Brand", type: "text", placeholder: "Tesla" },
+                    { key: "model", label: "Model", type: "text", placeholder: "Model S" },
+                    { key: "modelYear", label: "Model year", type: "number", placeholder: "2026" },
+                    { key: "price", label: "Price", type: "number", placeholder: "85000" },
+                    { key: "mileage", label: "Mileage", type: "number", placeholder: "0" },
+                  ].map((field) => (
+                      <label key={field.key} className="text-xs text-muted-foreground">
+                        {field.label}
+                        <input
+                            required
+                            min={field.type === "number" ? 0 : undefined}
+                            type={field.type}
+                            placeholder={field.placeholder}
+                            value={newVehicle[field.key as keyof typeof newVehicle] as string}
+                            onChange={(event) => setNewVehicle({ ...newVehicle, [field.key]: event.target.value })}
+                            className="mt-1 w-full border border-border rounded-sm px-3 py-2 text-sm bg-white text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                      </label>
+                  ))}
+                  <label className="text-xs text-muted-foreground">
+                    Body shape
+                    <select
+                        value={newVehicle.shape}
+                        onChange={(event) => setNewVehicle({ ...newVehicle, shape: event.target.value })}
+                        className="mt-1 w-full border border-border rounded-sm px-3 py-2 text-sm bg-white text-foreground"
+                    >
+                      {["SUV", "Sedan", "Hatchback", "Truck", "Coupe"].map((shapeOption) => <option key={shapeOption}>{shapeOption}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex gap-5 mt-4 text-xs text-muted-foreground">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={newVehicle.available} onChange={(event) => setNewVehicle({ ...newVehicle, available: event.target.checked })} />
+                    Available
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={newVehicle.hotDeal} onChange={(event) => setNewVehicle({ ...newVehicle, hotDeal: event.target.checked })} />
+                    Hot deal
+                  </label>
+                </div>
+                <button
+                    disabled={vehicleCreateLoading}
+                    className="mt-5 w-full bg-foreground text-white rounded-sm py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+                >
+                  {vehicleCreateLoading ? "ADDING VEHICLE…" : "ADD TO INVENTORY"}
+                </button>
+              </form>
+
+              <div className="bg-card border border-border rounded-sm p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Eye size={16} className="text-accent" />
+                  <h2 className="font-semibold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Application Usage</h2>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mb-5">
+                  {[
+                    ["All events", usageReport?.totalEvents ?? 0],
+                    ["Last 24 hours", usageReport?.eventsLast24Hours ?? 0],
+                    ["Unique users", usageReport?.uniqueAuthenticatedUsers ?? 0],
+                  ].map(([label, value]) => (
+                      <div key={String(label)} className="bg-secondary/50 rounded-sm p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+                        <p className="text-xl font-bold text-foreground mt-1">{value}</p>
+                      </div>
+                  ))}
+                </div>
+                <div className="space-y-2 max-h-48 overflow-auto">
+                  {Object.entries(usageReport?.eventsByType ?? {}).length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Usage will appear as customers interact with the store.</p>
+                  ) : Object.entries(usageReport?.eventsByType ?? {}).map(([eventType, count]) => (
+                      <div key={eventType} className="flex justify-between border-b border-border/50 pb-2 text-sm">
+                        <span className="text-muted-foreground">{eventType.replace(/_/g, " ")}</span>
+                        <span className="font-semibold text-foreground">{count}</span>
+                      </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Vehicle Sales Reports</h2>
+                {salesReport && <p className="text-xs text-muted-foreground mt-1">{salesReport.message} · Generated {new Date(salesReport.generatedAt).toLocaleString()}</p>}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

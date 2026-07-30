@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.evs.electricvehiclestore.entity.Vehicle;
+import com.evs.electricvehiclestore.dto.VehicleRequest;
 import com.evs.electricvehiclestore.repository.VehicleRepository;
 
 @Service
@@ -93,5 +94,19 @@ public class CatalogService {
 
     public List<Vehicle> getHotDeals() {
         return vehicleRepository.findByHotDealTrue();
+    }
+
+    public Vehicle addVehicle(VehicleRequest request) {
+        Vehicle vehicle = new Vehicle(
+                request.brand().trim(),
+                request.model().trim(),
+                request.modelYear(),
+                request.price(),
+                request.mileage(),
+                request.shape().trim(),
+                request.hotDeal()
+        );
+        vehicle.setAvailable(request.available());
+        return vehicleRepository.save(vehicle);
     }
 }

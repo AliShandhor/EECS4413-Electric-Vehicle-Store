@@ -93,4 +93,22 @@ public class CartController {
     ) {
         return cartService.removeSavedVehicle(userId, vehicleId);
     }
+
+    @PostMapping("/items/{vehicleId}/accessories/{accessoryId}")
+    public CartResponse addAccessory(
+            @RequestParam Long userId,
+            @PathVariable Long vehicleId,
+            @PathVariable Long accessoryId
+    ) {
+        return cartService.addAccessory(userId, vehicleId, accessoryId);
+    }
+
+    @DeleteMapping("/items/{vehicleId}/accessories/{accessoryId}")
+    public CartResponse removeAccessory(
+            @RequestParam Long userId,
+            @PathVariable Long vehicleId,
+            @PathVariable Long accessoryId
+    ) {
+        return cartService.removeAccessory(userId, vehicleId, accessoryId);
+    }
 }

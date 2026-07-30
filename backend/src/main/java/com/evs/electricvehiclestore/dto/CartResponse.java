@@ -27,7 +27,16 @@ public record CartResponse(
             boolean hotDeal,
             boolean available,
             int quantity,
+            List<AccessoryView> accessories,
             BigDecimal lineTotal
+    ) {
+    }
+
+    public record AccessoryView(
+            Long id,
+            String name,
+            String description,
+            BigDecimal price
     ) {
     }
 
