@@ -22,7 +22,7 @@ const SignInForm: React.FC<SignInProps> = React.memo(({ form, setForm, onSubmit,
         <input
           required
           type="email"
-          placeholder="ali@example.com"
+          placeholder="john.smith@example.com"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
           className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent"
