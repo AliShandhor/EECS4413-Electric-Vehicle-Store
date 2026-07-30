@@ -24,6 +24,10 @@ import {
 import SignInForm from './components/ui/SignInForm';
 import SignUpForm from './components/ui/SignUpForm';
 import AccountPage from "./components/ui/AccountPage";
+import sedanImage from "../assets/vehicles/ev-sedan.png";
+import suvImage from "../assets/vehicles/ev-suv.png";
+import hatchbackImage from "../assets/vehicles/ev-hatchback.png";
+import truckImage from "../assets/vehicles/ev-truck.png";
 
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -34,6 +38,19 @@ type Vehicle = {
   hotDeal: boolean; color: string; iconColor: string; range: number;
   seats: number; charge: string;
 };
+
+function vehicleImage(vehicle: Pick<Vehicle, "shape">): string {
+  switch (vehicle.shape.toLowerCase()) {
+    case "suv":
+      return suvImage;
+    case "hatchback":
+      return hatchbackImage;
+    case "truck":
+      return truckImage;
+    default:
+      return sedanImage;
+  }
+}
 
 type CartItem = {
   vehicle: Vehicle;
@@ -237,10 +254,18 @@ function VehicleCard({
           : 'none'
       }}
     >
-      <div className="relative flex items-center justify-center h-40" style={{ background: v.color }}>
-        <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: v.iconColor + "22" }}>
-          <Zap size={32} style={{ color: v.iconColor }} fill={v.iconColor} />
-        </div>
+      <div className="relative flex items-center justify-center h-40 overflow-hidden" style={{ background: v.color }}>
+        <img
+          src={vehicleImage(v)}
+          alt={`${v.name} electric vehicle`}
+          className="h-full w-full object-cover transition-transform duration-300"
+          style={{ transform: isHovered ? "scale(1.04)" : "scale(1)" }}
+          loading="lazy"
+        />
+        <div
+          className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent"
+          aria-hidden="true"
+        />
         {v.hotDeal && (
           <div className="absolute top-3 left-3">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: "#00c96b" }}>
@@ -1212,10 +1237,16 @@ if (view === "signin") {
             </button>
 
             <div className="bg-card border border-border rounded-sm overflow-hidden mb-6">
-              <div className="h-56 flex items-center justify-center relative" style={{ background: selected.color }}>
-                <div className="w-24 h-24 rounded-full flex items-center justify-center" style={{ background: selected.iconColor + "22" }}>
-                  <Zap size={48} style={{ color: selected.iconColor }} fill={selected.iconColor} />
-                </div>
+              <div className="h-56 flex items-center justify-center relative overflow-hidden" style={{ background: selected.color }}>
+                <img
+                  src={vehicleImage(selected)}
+                  alt={`${selected.name} electric vehicle`}
+                  className="h-full w-full object-cover"
+                />
+                <div
+                  className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent"
+                  aria-hidden="true"
+                />
                 {selected.hotDeal && (
                     <div className="absolute top-4 left-4">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: "#00c96b" }}>
