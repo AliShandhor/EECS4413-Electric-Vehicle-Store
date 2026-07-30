@@ -46,7 +46,8 @@ public class AuthUsageInterceptor implements HandlerInterceptor {
 
         String path = request.getRequestURI();
         boolean publicRequest =
-                path.startsWith("/api/identity/register")
+                path.startsWith("/api/health")
+                || path.startsWith("/api/identity/register")
                 || path.startsWith("/api/identity/login")
                 || path.startsWith("/api/identity/check-email")
                 || path.startsWith("/api/chatbot")

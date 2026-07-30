@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: eecs4413-ev-store
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: H2_CONSOLE_ENABLED
+        value: "false"
+      - key: SPRING_JPA_SHOW_SQL
+        value: "false"
+      - key: SPRING_DATASOURCE_URL
+        value: jdbc:h2:mem:evstoredb
