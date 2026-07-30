@@ -1,97 +1,203 @@
-# EECS4413-EV-Store
+# EECS4413 Electric Vehicle Store
 
 ## Overview
 
-EECS4413-EV-Store is an e-commerce web application developed for the EECS 4413 Team Project (Summer 2026). The system allows customers to browse, compare, customize, finance, and purchase electric vehicles online. Administrators can manage inventory and generate sales and usage reports.
+The Electric Vehicle Store is a full-stack e-commerce application developed
+for the EECS 4413 Team Project (Summer 2026). Customers can browse electric
+vehicles, manage a cart, select accessories, check out, and use an AI shopping
+assistant. Administrators can add vehicles and view sales and usage reports.
 
 ## Team Members
 
 | Name | Student Number |
-|--------|--------|
+| --- | --- |
 | Ali Shandhor | 218932178 |
 | Johnmark Eustace | 218811042 |
 | Ashik Acharya | 219611565 |
 | Nusayba Hossain | 219971944 |
 | Uzma Alam | 219159771 |
 
-## Features
+## Technology Stack
 
-### Customer Features
-- View electric vehicle catalog
-- Sort vehicles by price and mileage
-- Filter vehicles by brand, model year, and vehicle history
-- View vehicle details
-- Compare vehicles
-- View hot deals
-- Loan payment calculator
-- Customize vehicle options
-- Add vehicles to shopping cart
-- Edit or remove vehicles from shopping cart
-- Checkout and purchase vehicles
-- Register, login, and logout
-- Submit reviews and ratings
-- Chatbot assistance
+- Frontend: React 18, TypeScript, Vite, Material UI, and Tailwind CSS
+- Backend: Java 21, Spring Boot, Spring Data JPA, and Maven
+- Authentication: JWT and BCrypt password hashing
+- Database: H2 for development and the classroom demo
+- Deployment: Docker, Docker Compose, and Render
+- AI assistant: Groq API, with a built-in fallback when no API key is set
 
-### Administrator Features
-- View vehicle sales reports
-- View website usage reports
-- Manage inventory and vehicle listings
+## Run with Docker (Recommended)
 
-### Distinguished Feature
-- Save vehicles to Favorites List
+### Requirements
 
----
+- Git
+- Docker Desktop
 
-## Technologies
+Clone the deployment branch and enter the project directory:
 
-### Frontend
-- HTML
-- CSS
-- JavaScript
+```powershell
+git clone --branch main-deployment https://github.com/AliShandhor/EECS4413-Electric-Vehicle-Store.git
+cd EECS4413-Electric-Vehicle-Store
+```
 
-### Backend
+Start Docker Desktop, then build and run the complete frontend and backend:
 
+```powershell
+docker compose up --build
+```
 
-### Database
+Open the application at:
 
+```text
+http://localhost:8080
+```
 
-### Tools
-- GitHub
+The health check is available at:
 
----
+```text
+http://localhost:8080/api/health
+```
+
+Stop the application without deleting its database:
+
+```powershell
+docker compose down
+```
+
+After the image has already been built, start it again more quickly with:
+
+```powershell
+docker compose up -d --no-build
+```
+
+Local Docker data is stored in the `ev-store-data` volume. Only use the
+following command when you intentionally want to delete the local database:
+
+```powershell
+docker compose down --volumes
+```
+
+## Run Frontend and Backend Separately
+
+Use two PowerShell terminals.
+
+### 1. Start the backend
+
+Requirements:
+
+- Java 21 or newer
+- Internet access for Maven dependencies
+
+From the repository root:
+
+```powershell
+cd backend
+.\mvnw.cmd spring-boot:run
+```
+
+The backend runs at `http://localhost:8080`.
+
+### 2. Start the frontend
+
+Requirements:
+
+- Node.js 20 or newer
+- npm
+
+In a second PowerShell terminal, from the repository root:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173`. Vite forwards `/api` requests to the backend on
+port 8080, so both terminals must remain running.
+
+## Configure the AI Assistant
+
+The application works without a Groq API key by using its built-in assistant.
+To enable Groq, generate a new key and set it only as an environment variable.
+Never put the key in `application.properties` or commit it to Git.
+
+For a backend started directly:
+
+```powershell
+cd backend
+$env:GROQ_API_KEY="your-new-key"
+.\mvnw.cmd spring-boot:run
+```
+
+For Docker:
+
+```powershell
+$env:GROQ_API_KEY="your-new-key"
+docker compose up --build
+```
+
+The variable lasts only for the current PowerShell window.
+
+## Seeded Administrator
+
+```text
+Email: admin@evstore.ca
+Password: Admin123!
+```
+
+These credentials are for the project demonstration only.
+
+## Run Tests and Production Builds
+
+Backend tests:
+
+```powershell
+cd backend
+.\mvnw.cmd test
+```
+
+Frontend production build:
+
+```powershell
+cd frontend
+npm ci
+npm run build
+```
+
+## Deploy on Render
+
+The `main-deployment` branch contains a root-level `render.yaml` Blueprint and
+`Dockerfile`.
+
+1. Push the latest changes to the `main-deployment` branch.
+2. In Render, select **New > Blueprint**.
+3. Connect this GitHub repository and select `main-deployment`.
+4. Use a Blueprint name such as `ev-store-deployment`.
+5. Leave **Blueprint Path** blank because `render.yaml` is at the repository
+   root.
+6. Enter a newly generated `GROQ_API_KEY` when Render prompts for it.
+7. Apply the Blueprint and wait for `/api/health` to pass.
+
+The free Render configuration uses an in-memory H2 database. Seed data is
+restored whenever the hosted service restarts, but newly created users and
+orders are not permanent.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for additional deployment and demo notes.
 
 ## Project Structure
 
 ```text
-EECS4413-EV-Store
-│
-├── docs/
-├── frontend/
-├── backend/
-└── README.md
+EECS4413-Electric-Vehicle-Store/
+|-- backend/       Spring Boot API, services, entities, and tests
+|-- frontend/      React and Vite application
+|-- docs/          Project documentation
+|-- compose.yaml   Local Docker configuration
+|-- Dockerfile     Production multi-stage image
+|-- render.yaml    Render Blueprint
+`-- README.md
 ```
 
-## Architecture
-
-The application follows a multi-tier architecture:
-
-- Presentation Layer (Frontend)
-- API/Controller Layer
-- Service Layer
-- Data Access Layer (DAO)
-- Database Layer
-
-The architecture follows MVC principles and emphasizes low coupling and high cohesion.
-
----
-
-## Setup Instructions
-
-### Clone Repository
-
-```bash
-git clone https://github.com/your-team/EECS4413-EV-Store.git
-```
 ## License
 
-This project was developed for educational purposes as part of EECS 4413 at York University.
+This project was developed for educational purposes as part of EECS 4413 at
+York University.
