@@ -132,7 +132,7 @@ public class OrderService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credit card is expired");
         }
 
-        boolean approved = paymentService.processPayment();
+        boolean approved = paymentService.processPayment(creditCard);
         order.setStatus(approved ? STATUS_PROCESSED : STATUS_DENIED);
         orderRepository.save(order);
 

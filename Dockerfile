@@ -47,4 +47,4 @@ ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0"
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -q -O - "http://127.0.0.1:${PORT}/api/health" || exit 1
 
-CMD ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT} -jar /app/app.jar"]
+CMD ["sh", "-c", "if [ -n \"${DATABASE_URL:-}\" ]; then case \"$DATABASE_URL\" in jdbc:*) export SPRING_DATASOURCE_URL=\"$DATABASE_URL\" ;; postgres://*|postgresql://*) db_connection=\"${DATABASE_URL#*://}\"; export SPRING_DATASOURCE_URL=\"jdbc:postgresql://${db_connection#*@}\" ;; *) echo 'Unsupported DATABASE_URL scheme' >&2; exit 1 ;; esac; fi; exec java $JAVA_OPTS -Dserver.port=${PORT} -jar /app/app.jar"]

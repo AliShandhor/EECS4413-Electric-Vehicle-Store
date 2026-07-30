@@ -22,7 +22,7 @@ assistant. Administrators can add vehicles and view sales and usage reports.
 - Frontend: React 18, TypeScript, Vite, Material UI, and Tailwind CSS
 - Backend: Java 21, Spring Boot, Spring Data JPA, and Maven
 - Authentication: JWT and BCrypt password hashing
-- Database: H2 for development and the classroom demo
+- Database: H2 for local development and PostgreSQL on Render
 - Deployment: Docker, Docker Compose, and Render
 - AI assistant: Groq API, with a built-in fallback when no API key is set
 
@@ -147,6 +147,12 @@ Password: Admin123!
 
 These credentials are for the project demonstration only.
 
+Hosted payment simulation:
+
+- Any valid 13–19 digit card number normally produces an approved payment.
+- A valid card number ending in `0000` predictably demonstrates a denied
+  payment without introducing random demo failures.
+
 ## Run Tests and Production Builds
 
 Backend tests:
@@ -178,9 +184,10 @@ The `main-deployment` branch contains a root-level `render.yaml` Blueprint and
 6. Enter a newly generated `GROQ_API_KEY` when Render prompts for it.
 7. Apply the Blueprint and wait for `/api/health` to pass.
 
-The free Render configuration uses an in-memory H2 database. Seed data is
-restored whenever the hosted service restarts, but newly created users and
-orders are not permanent.
+The Blueprint creates a free Render PostgreSQL database so users, carts,
+orders, and reports survive web-service sleep and redeploys. Render's free
+PostgreSQL databases expire after 30 days, so this configuration is intended
+for the classroom demonstration rather than long-term production.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for additional deployment and demo notes.
 

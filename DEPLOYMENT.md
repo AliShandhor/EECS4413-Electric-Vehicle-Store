@@ -57,9 +57,10 @@ docker compose down --volumes
 6. Apply the Blueprint and wait for the Docker build and health check to pass.
 7. Open the generated `https://...onrender.com` URL.
 
-The free hosted configuration uses an in-memory H2 database. It reseeds the
-default vehicles, accessories, and administrator whenever the service restarts.
-That is appropriate for a classroom demo, but not permanent production storage.
+The Blueprint creates a free Render PostgreSQL database so demo data survives
+web-service sleep and redeploys. Free Render PostgreSQL databases expire after
+30 days and do not include backups, so this remains a classroom-demo
+configuration rather than permanent production storage.
 
 Seeded administrator:
 
@@ -68,9 +69,14 @@ Email: admin@evstore.ca
 Password: Admin123!
 ```
 
+For a predictable denied-payment demonstration, use a valid 13–19 digit test
+card number ending in `0000`. Other valid test card numbers are approved.
+
 ## Pre-demo checklist
 
 - Open the public URL before the presentation so a free instance can wake up.
+- Confirm both `eecs4413-ev-store` and `eecs4413-ev-store-db` show as available
+  in the Blueprint resources.
 - Register a customer and verify catalogue, cart, accessories, and checkout.
 - Sign out, then verify the administrator dashboard using the seeded account.
 - Confirm `/api/health` returns `"status": "UP"`.

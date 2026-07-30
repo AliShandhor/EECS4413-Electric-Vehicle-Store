@@ -12,5 +12,27 @@ services:
         value: "false"
       - key: SPRING_JPA_SHOW_SQL
         value: "false"
-      - key: SPRING_DATASOURCE_URL
-        value: jdbc:h2:mem:evstoredb
+      - key: SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: update
+      - key: PAYMENT_APPROVAL_MODE
+        value: deterministic
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: eecs4413-ev-store-db
+          property: connectionString
+      - key: SPRING_DATASOURCE_USERNAME
+        fromDatabase:
+          name: eecs4413-ev-store-db
+          property: user
+      - key: SPRING_DATASOURCE_PASSWORD
+        fromDatabase:
+          name: eecs4413-ev-store-db
+          property: password
+
+databases:
+  - name: eecs4413-ev-store-db
+    plan: free
+    databaseName: evstore
+    user: evstore
