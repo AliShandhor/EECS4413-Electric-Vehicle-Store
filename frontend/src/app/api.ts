@@ -8,6 +8,7 @@ export type ApiVehicle = {
   shape: string;
   hotDeal: boolean;
   available: boolean;
+  imageAvailable: boolean;
 };
 
 export type AuthUser = {
@@ -204,7 +205,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
     headers: {
       Accept: "application/json",
-      ...(options?.body ? { "Content-Type": "application/json" } : {}),
+      ...(options?.body && !(options.body instanceof FormData)
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
@@ -247,6 +250,16 @@ export const catalogApi = {
       method: "POST",
       body: JSON.stringify(vehicle),
     }),
+  uploadImage: (vehicleId: number, image: File) => {
+    const formData = new FormData();
+    formData.append("image", image);
+    return request<ApiVehicle>(`/api/catalog/vehicles/${vehicleId}/image`, {
+      method: "POST",
+      body: formData,
+    });
+  },
+  imageUrl: (vehicleId: number) =>
+    `${API_BASE}/api/catalog/vehicles/${vehicleId}/image`,
 };
 
 export const authApi = {

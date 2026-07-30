@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ShoppingCart, LogOut, ChevronDown, Zap, X, Plus, Minus, ArrowLeft,
   BarChart2, Package, TrendingUp, Check, Eye, Star, MessageCircle,
-  Send, Calculator, GitCompare, Flame,
+  Send, Calculator, GitCompare, Flame, ImagePlus,
 } from "lucide-react";
 import {
   analyticsApi,
@@ -36,10 +36,10 @@ type Vehicle = {
   id: number; name: string; brand: string; shape: string; year: number;
   km: number; country: string; price: number; available: boolean;
   hotDeal: boolean; color: string; iconColor: string; range: number;
-  seats: number; charge: string;
+  seats: number; charge: string; imageUrl?: string;
 };
 
-function vehicleImage(vehicle: Pick<Vehicle, "shape">): string {
+function fallbackVehicleImage(vehicle: Pick<Vehicle, "shape">): string {
   switch (vehicle.shape.toLowerCase()) {
     case "suv":
       return suvImage;
@@ -50,6 +50,10 @@ function vehicleImage(vehicle: Pick<Vehicle, "shape">): string {
     default:
       return sedanImage;
   }
+}
+
+function vehicleImage(vehicle: Pick<Vehicle, "shape" | "imageUrl">): string {
+  return vehicle.imageUrl ?? fallbackVehicleImage(vehicle);
 }
 
 type CartItem = {
@@ -113,6 +117,7 @@ type VehicleSource = {
   shape: string;
   hotDeal: boolean;
   available: boolean;
+  imageAvailable?: boolean;
 };
 
 function toVehicle(source: VehicleSource): Vehicle {
@@ -136,6 +141,7 @@ function toVehicle(source: VehicleSource): Vehicle {
     range: seed?.range ?? 450,
     seats: seed?.seats ?? 5,
     charge: seed?.charge ?? "150 kW",
+    imageUrl: source.imageAvailable && id ? catalogApi.imageUrl(id) : undefined,
   };
 }
 
@@ -261,6 +267,9 @@ function VehicleCard({
           className="h-full w-full object-cover transition-transform duration-300"
           style={{ transform: isHovered ? "scale(1.04)" : "scale(1)" }}
           loading="lazy"
+          onError={(event) => {
+            event.currentTarget.src = fallbackVehicleImage(v);
+          }}
         />
         <div
           className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent"
@@ -563,7 +572,14 @@ export default function App() {
     brand: "", model: "", modelYear: String(new Date().getFullYear()), price: "",
     mileage: "0", shape: "SUV", hotDeal: false, available: true,
   });
+  const [newVehicleImage, setNewVehicleImage] = useState<File | null>(null);
+  const [newVehicleImagePreview, setNewVehicleImagePreview] = useState("");
+  const newVehicleImageInput = useRef<HTMLInputElement>(null);
   const [vehicleCreateLoading, setVehicleCreateLoading] = useState(false);
+
+  useEffect(() => () => {
+    if (newVehicleImagePreview) URL.revokeObjectURL(newVehicleImagePreview);
+  }, [newVehicleImagePreview]);
 
 
   // checkout
@@ -826,7 +842,7 @@ export default function App() {
     setVehicleCreateLoading(true);
     clearStatus();
     try {
-      const created = await catalogApi.add({
+      let created = await catalogApi.add({
         brand: newVehicle.brand.trim(),
         model: newVehicle.model.trim(),
         modelYear: Number(newVehicle.modelYear),
@@ -835,15 +851,33 @@ export default function App() {
         shape: newVehicle.shape,
         hotDeal: newVehicle.hotDeal,
         available: newVehicle.available,
+        imageAvailable: false,
       });
+      let imageUploadError = "";
+      if (newVehicleImage) {
+        try {
+          created = await catalogApi.uploadImage(created.id, newVehicleImage);
+        } catch (error) {
+          imageUploadError = error instanceof Error
+              ? error.message
+              : "the selected image could not be uploaded";
+        }
+      }
       const mapped = toVehicle(created);
       setVehicles((items) => [...items, mapped]);
       setCatalogVehicles((items) => [...items, mapped]);
-      setApiMessage(`${mapped.name} was added to inventory`);
+      if (imageUploadError) {
+        setApiError(`${mapped.name} was added, but its photo was not uploaded: ${imageUploadError}`);
+      } else {
+        setApiMessage(`${mapped.name} was added to inventory${newVehicleImage ? " with its photo" : ""}`);
+      }
       setNewVehicle({
         brand: "", model: "", modelYear: String(new Date().getFullYear()), price: "",
         mileage: "0", shape: "SUV", hotDeal: false, available: true,
       });
+      setNewVehicleImage(null);
+      setNewVehicleImagePreview("");
+      if (newVehicleImageInput.current) newVehicleImageInput.current.value = "";
     } catch (error) {
       setApiError(error instanceof Error ? error.message : "Vehicle could not be added");
     } finally {
@@ -1242,6 +1276,9 @@ if (view === "signin") {
                   src={vehicleImage(selected)}
                   alt={`${selected.name} electric vehicle`}
                   className="h-full w-full object-cover"
+                  onError={(event) => {
+                    event.currentTarget.src = fallbackVehicleImage(selected);
+                  }}
                 />
                 <div
                   className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent"
@@ -1882,6 +1919,68 @@ if (view === "signin") {
                       {["SUV", "Sedan", "Hatchback", "Truck", "Coupe"].map((shapeOption) => <option key={shapeOption}>{shapeOption}</option>)}
                     </select>
                   </label>
+                </div>
+                <div className="mt-4">
+                  <label className="text-xs text-muted-foreground" htmlFor="vehicle-image">
+                    Vehicle photo <span className="text-muted-foreground/70">(optional)</span>
+                  </label>
+                  <div className="mt-1 grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-3">
+                    <label
+                        htmlFor="vehicle-image"
+                        className="min-h-28 cursor-pointer rounded-sm border border-dashed border-border bg-muted/30 px-4 py-4 flex flex-col items-center justify-center text-center hover:border-accent hover:bg-accent/5 transition-colors"
+                    >
+                      <ImagePlus size={24} className="mb-2 text-accent" />
+                      <span className="text-sm font-medium text-foreground">
+                        {newVehicleImage ? newVehicleImage.name : "Choose a vehicle photo"}
+                      </span>
+                      <span className="mt-1 text-[11px] text-muted-foreground">
+                        JPEG, PNG, or WebP · maximum 5 MB
+                      </span>
+                      <input
+                          ref={newVehicleImageInput}
+                          id="vehicle-image"
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="sr-only"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] ?? null;
+                            clearStatus();
+                            if (!file) {
+                              setNewVehicleImage(null);
+                              setNewVehicleImagePreview("");
+                              return;
+                            }
+                            if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+                              setApiError("Choose a JPEG, PNG, or WebP image");
+                              event.currentTarget.value = "";
+                              setNewVehicleImage(null);
+                              setNewVehicleImagePreview("");
+                              return;
+                            }
+                            if (file.size > 5 * 1024 * 1024) {
+                              setApiError("Vehicle images must be 5 MB or smaller");
+                              event.currentTarget.value = "";
+                              setNewVehicleImage(null);
+                              setNewVehicleImagePreview("");
+                              return;
+                            }
+                            setNewVehicleImage(file);
+                            setNewVehicleImagePreview(URL.createObjectURL(file));
+                          }}
+                      />
+                    </label>
+                    <div className="h-28 rounded-sm border border-border overflow-hidden bg-muted flex items-center justify-center">
+                      {newVehicleImagePreview ? (
+                          <img
+                              src={newVehicleImagePreview}
+                              alt="Selected vehicle preview"
+                              className="h-full w-full object-cover"
+                          />
+                      ) : (
+                          <span className="px-3 text-center text-xs text-muted-foreground">Photo preview</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <div className="flex gap-5 mt-4 text-xs text-muted-foreground">
                   <label className="flex items-center gap-2">
