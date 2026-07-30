@@ -1,6 +1,2 @@
 backend/target/
 **/.codex-run/
-.env
-.env.*
-!.env.example
-.docker-local-ca.crt
