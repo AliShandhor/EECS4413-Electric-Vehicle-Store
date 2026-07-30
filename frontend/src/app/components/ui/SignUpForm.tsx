@@ -18,10 +18,10 @@ const SignUpForm: React.FC<SignUpProps> = React.memo(({ form, setForm, onSubmit,
     >
       {error && <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-sm">{error}</p>}
       {[
-        { label: "Full Name", key: "name", type: "text", placeholder: "Ali Shandhor" },
-        { label: "Email Address", key: "email", type: "email", placeholder: "ali@example.com" },
-        { label: "Password", key: "password", type: "password", placeholder: "Min. 6 characters" },
-        { label: "Confirm Password", key: "confirm", type: "password", placeholder: "Repeat password" },
+        { label: "Full Name", key: "name", type: "text", placeholder: "John Smith" },
+        { label: "Email Address", key: "email", type: "email", placeholder: "john.smith@example.com" },
+        { label: "Password", key: "password", type: "password", placeholder: "Enter your password" },
+        { label: "Confirm Password", key: "confirm", type: "password", placeholder: "Confirm your password" },
       ].map(({ label, key, type, placeholder }) => (
         <div key={key}>
           <label className="text-xs text-muted-foreground block mb-1">{label}</label>
