@@ -1,8 +1,10 @@
 import { ArrowUpRight, Zap } from "lucide-react";
 import heroImage from "../../assets/vehicles/ev-sedan.png";
 import "../../styles/landing.css";
+import type { ReactNode } from "react";
+import VehicleSkeletons from "./VehicleSkeletons";
 
-export default function LandingPage() {
+export default function LandingPage({ featured, loading }: { featured: ReactNode; loading: boolean }) {
   return (
     <div className="ev-landing">
       <a className="ev-landing__skip" href="#landing-main">Skip to content</a>
@@ -34,6 +36,12 @@ export default function LandingPage() {
             <img src={heroImage} alt="Silver electric sedan viewed from the front and side" width={1672} height={941} fetchPriority="high" />
             <figcaption><span>The future looks good on you.</span><span aria-hidden="true">01 / EV STORE</span></figcaption>
           </figure>
+        </section>
+
+        <section className="landing-featured" aria-labelledby="featured-heading">
+          <div className="landing-featured__heading"><div><p className="ev-landing__eyebrow">Find your next drive</p><h2 id="featured-heading">Electric possibilities.</h2></div><a className="ev-landing__button" href="#/catalogue">Explore Vehicles <ArrowUpRight size={18} aria-hidden="true" /></a></div>
+          {loading ? <VehicleSkeletons count={3} /> : <div className="vehicle-grid">{featured}</div>}
+          <p className="landing-featured__note">*Range figures are illustrative sample specifications. Images may illustrate the vehicle body type.</p>
         </section>
 
         <section className="ev-landing__introduction" aria-labelledby="landing-introduction">

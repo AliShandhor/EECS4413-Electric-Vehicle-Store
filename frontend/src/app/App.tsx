@@ -14,7 +14,6 @@ import {
   catalogApi,
   orderApi,
   type Accessory,
-  type ApiVehicle,
   type AuthUser,
   type CartResponse as ApiCartResponse,
   type OrderSummary,
@@ -26,6 +25,11 @@ import SignUpForm from './components/ui/SignUpForm';
 import AccountPage from "./components/ui/AccountPage";
 import LandingPage from "./components/LandingPage";
 import AuthShell from "./components/AuthShell";
+import StoreNav from "./components/StoreNav";
+import VehicleGallery from "./components/VehicleGallery";
+import VehicleSkeletons from "./components/VehicleSkeletons";
+import { toast } from "sonner";
+import "../styles/store.css";
 import sedanImage from "../assets/vehicles/ev-sedan.png";
 import suvImage from "../assets/vehicles/ev-suv.png";
 import hatchbackImage from "../assets/vehicles/ev-hatchback.png";
@@ -74,22 +78,21 @@ function isView(value: unknown): value is View {
   return typeof value === "string" && VIEWS.includes(value as View);
 }
 
+const PUBLIC_VIEWS: View[] = ["home", "signin", "register", "catalogue", "detail", "hotdeals", "compare"];
+
 function navigationUrl(view: View, vehicleId?: number): string {
-  return view === "detail" && vehicleId ? `#/vehicles/${vehicleId}` : `#/${view}`;
+  if (view === "home") return "/";
+  if (view === "signin") return "/signin";
+  if (view === "register") return "/signup";
+  return view === "detail" && vehicleId ? `/#/vehicles/${vehicleId}` : `/#/${view}`;
 }
 
-function readNavigation(state: unknown = window.history.state): NavigationTarget {
-  if (state && typeof state === "object") {
-    const candidate = state as { evs?: boolean; view?: unknown; vehicleId?: unknown };
-    if (candidate.evs && isView(candidate.view)) {
-      return {
-        view: candidate.view,
-        vehicleId: typeof candidate.vehicleId === "number" ? candidate.vehicleId : undefined,
-      };
-    }
-  }
-
-  const route = window.location.hash.replace(/^#\/?/, "");
+function readNavigation(): NavigationTarget {
+  // The address is authoritative; old history state must not override the homepage.
+  const route = (window.location.hash.startsWith("#/")
+    ? window.location.hash.slice(2)
+    : window.location.pathname.replace(/^\/|\/$/g, ""));
+  if (route === "signup") return { view: "register" };
   const vehicleMatch = route.match(/^vehicles\/(\d+)$/);
   if (vehicleMatch) return { view: "detail", vehicleId: Number(vehicleMatch[1]) };
   return isView(route) ? { view: route } : { view: "home" };
@@ -237,103 +240,26 @@ function StarRating({ rating, onRate }: { rating: number; onRate?: (r: number) =
   );
 }
 
-function VehicleCard({
-                       v, onView, onAddCart, compareIds, onToggleCompare,
-                     }: {
+function VehicleCard({ v, onView, onAddCart, compareIds, onToggleCompare }: {
   v: Vehicle; onView: () => void; onAddCart: () => void;
   compareIds: number[]; onToggleCompare: (id: number) => void;
 }) {
   const inCompare = compareIds.includes(v.id);
-  const [isHovered, setIsHovered] = useState(false);
-
-  return (
-    <div 
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={onView}
-      className="bg-card border rounded-md overflow-hidden flex flex-col cursor-pointer
-                 transition-all duration-300 ease-out
-                 active:scale-[0.98] active:bg-slate-50/50"
-      style={{
-        borderColor: isHovered ? v.iconColor : 'var(--border)',
-        transform: isHovered ? 'translateY(-6px)' : 'translateY(0px)',
-        boxShadow: isHovered 
-          ? `0 15px 30px -10px ${v.iconColor}44, 0 0 20px 4px ${v.iconColor}22` 
-          : 'none'
-      }}
-    >
-      <div className="relative flex items-center justify-center h-40 overflow-hidden" style={{ background: v.color }}>
-        <img
-          src={vehicleImage(v)}
-          alt={`${v.name} electric vehicle`}
-          className="h-full w-full object-cover transition-transform duration-300"
-          style={{ transform: isHovered ? "scale(1.04)" : "scale(1)" }}
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.src = fallbackVehicleImage(v);
-          }}
-        />
-        <div
-          className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent"
-          aria-hidden="true"
-        />
-        {v.hotDeal && (
-          <div className="absolute top-3 left-3">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: "#00c96b" }}>
-              <Flame size={10} className="text-orange-400" /> Hot deal
-            </span>
-          </div>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleCompare(v.id);
-          }}
-          title="Compare"
-          className={`absolute top-3 right-3 w-6 h-6 rounded-sm border flex items-center justify-center transition-all duration-100 active:scale-90 text-xs font-bold ${inCompare ? "bg-foreground text-primary-foreground border-foreground shadow-sm" : "bg-white/80 text-foreground border-border hover:border-foreground"}`}
-        >
-          {inCompare ? <Check size={11} /> : <GitCompare size={11} />}
-        </button>
-      </div>
-
-      <div className="flex flex-col flex-1 p-4 gap-2">
-        <h3 className="text-base font-semibold text-foreground leading-tight" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{v.name}</h3>
-        <p className="text-xs text-muted-foreground">{v.year} · {v.shape} · {fmtKm(v.km)}</p>
-        <p className="text-xl font-bold text-foreground mt-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{fmt(v.price)}</p>
-        <p className={`text-xs font-medium ${v.available ? "text-muted-foreground" : "text-destructive"}`}>
-          {v.available ? "Available now" : "Out of stock"}
-        </p>
-        <div className="flex gap-2 mt-auto pt-2">
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onView();
-            }} 
-            className="flex-1 text-xs text-foreground border border-border rounded-sm py-1.5 hover:bg-secondary transition-all active:scale-95"
-          >
-            View details
-          </button>
-          {v.available && (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddCart();
-              }} 
-              className="flex-1 text-xs text-white rounded-sm py-1.5 transition-all hover:opacity-90 active:scale-95" 
-              style={{ background: "#111" }}
-            >
-              Add to cart
-            </button>
-          )}
-          </div>
-        </div>
-      </div>
-  );
+  return <article className="vehicle-card">
+    <div className="vehicle-card__image">
+      <button onClick={onView} aria-label={`View details for ${v.name}`}><img src={vehicleImage(v)} alt={`${v.name} electric vehicle`} loading="lazy" onError={(event) => { event.currentTarget.src = fallbackVehicleImage(v); }} /></button>
+      {v.hotDeal && <span className="vehicle-card__badge">Hot deal</span>}
+      <button className="vehicle-card__compare" aria-label={`Compare ${v.name}`} aria-pressed={inCompare} onClick={() => onToggleCompare(v.id)}>{inCompare ? <Check size={17} /> : <GitCompare size={17} />}</button>
+    </div>
+    <div className="vehicle-card__body">
+      <p className="vehicle-card__category">{v.brand} / {v.shape}</p>
+      <h3><button onClick={onView}>{v.name}</button></h3>
+      <div className="vehicle-card__specs"><span>{v.year}</span><span>{fmtKm(v.km)}</span><span title="Illustrative range from sample specifications">{v.range} km range*</span></div>
+      <div className="vehicle-card__price">{fmt(v.price)}<span>{v.available ? 'Available now' : 'Out of stock'}</span></div>
+      <div className="vehicle-card__actions"><button onClick={onView}>View Details</button>{v.available && <button onClick={onAddCart} aria-label={`Add ${v.name} to cart`}><ShoppingCart size={17} aria-hidden="true" />Add to cart</button>}</div>
+    </div>
+  </article>;
 }
-
-
-
-// ─── Chatbot ──────────────────────────────────────────────────────────────────
 
 function Chatbot({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
   const [input, setInput] = useState("");
@@ -515,7 +441,6 @@ export default function App() {
   });
   const historyInitialized = useRef(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>(VEHICLES);
-  const [catalogVehicles, setCatalogVehicles] = useState<Vehicle[]>(VEHICLES);
   const [hotDeals, setHotDeals] = useState<Vehicle[]>(VEHICLES.filter((vehicle) => vehicle.hotDeal));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [compareIds, setCompareIds] = useState<number[]>([]);
@@ -538,6 +463,7 @@ export default function App() {
   const [year, setYear] = useState("All years");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  const [minRange, setMinRange] = useState("");
   const [sort, setSort] = useState("Featured");
   const [applied, setApplied] = useState(false);
 
@@ -547,6 +473,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => authStorage.user());
+  const [authChecking, setAuthChecking] = useState(() => !!authStorage.user());
   const [userName, setUserName] = useState(() => authStorage.user()?.fullName ?? "");
 
   const [newVehicle, setNewVehicle] = useState({
@@ -578,6 +505,8 @@ export default function App() {
   const [newReview, setNewReview] = useState({ rating: 0, comment: "" });
   const [reviewError, setReviewError] = useState("");
 
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [view]);
+
   useEffect(() => {
     const vehicleId = view === "detail" ? selected?.id : undefined;
     const url = navigationUrl(view, vehicleId);
@@ -586,7 +515,7 @@ export default function App() {
     if (!historyInitialized.current) {
       window.history.replaceState(state, "", url);
       historyInitialized.current = true;
-    } else if (window.location.hash !== url) {
+    } else if (window.location.pathname + window.location.hash !== url) {
       window.history.pushState(state, "", url);
     } else {
       window.history.replaceState(state, "", url);
@@ -594,8 +523,8 @@ export default function App() {
   }, [view, selected?.id]);
 
   useEffect(() => {
-    function restoreFromHistory(event: PopStateEvent) {
-      const target = readNavigation(event.state);
+    function restoreFromHistory() {
+      const target = readNavigation();
 
       if (target.view === "detail" && target.vehicleId) {
         const vehicle = vehicles.find((item) => item.id === target.vehicleId);
@@ -649,7 +578,7 @@ export default function App() {
       if (vehicleResult.status === "fulfilled") {
         const mapped = vehicleResult.value.map(toVehicle);
         setVehicles(mapped);
-        setCatalogVehicles(mapped);
+
       } else {
         setApiError(`Catalogue could not be loaded: ${vehicleResult.reason instanceof Error ? vehicleResult.reason.message : "Unknown error"}`);
       }
@@ -673,31 +602,34 @@ export default function App() {
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (!currentUser) {
-      if (view !== "home" && view !== "signin" && view !== "register") setView("signin");
-      return;
-    }
-    void authApi.validate().then(({ valid }) => {
-      if (!valid) {
-        authStorage.clear();
-        setCurrentUser(null);
-        setUserName("");
-        setView("signin");
-      }
-    }).catch(() => {
+    let active = true;
+    if (!currentUser) { setAuthChecking(false); return; }
+    setAuthChecking(true);
+    function clearExpiredSession() {
+      if (!active) return;
       authStorage.clear();
       setCurrentUser(null);
       setUserName("");
-      setView("signin");
+    }
+    void authApi.validate().then(({ valid }) => {
+      if (!valid) clearExpiredSession();
+    }).catch(clearExpiredSession).finally(() => {
+      if (active) setAuthChecking(false);
     });
-  }, []);
+    return () => { active = false; };
+  }, [currentUser?.id]);
 
   useEffect(() => {
-    if (view === "admin" && currentUser?.role !== "ADMIN") setView("catalogue");
-  }, [view, currentUser?.role]);
+    if (authChecking || PUBLIC_VIEWS.includes(view)) return;
+    const redirect = !currentUser ? "signin" : view === "admin" && currentUser.role !== "ADMIN" ? "catalogue" : null;
+    if (redirect) {
+      window.history.replaceState({ evs: true, view: redirect }, "", navigationUrl(redirect));
+      setView(redirect);
+    }
+  }, [view, currentUser, authChecking]);
 
   useEffect(() => {
-    if (view !== "admin") return;
+    if (view !== "admin" || authChecking || currentUser?.role !== "ADMIN") return;
     setApiError("");
     Promise.all([analyticsApi.sales(), analyticsApi.usage()])
         .then(([sales, usage]) => {
@@ -705,7 +637,7 @@ export default function App() {
           setUsageReport(usage);
         })
         .catch((error: unknown) => setApiError(error instanceof Error ? error.message : "Admin reports could not be loaded"));
-  }, [view]);
+  }, [view, authChecking, currentUser?.role]);
 
   async function runCartAction(action: () => Promise<ApiCartResponse>) {
     clearStatus();
@@ -713,15 +645,19 @@ export default function App() {
       const response = await action();
       syncCart(response);
       setApiMessage(response.message);
+      toast.success(response.message || "Cart updated");
+      return true;
     } catch (error) {
       setApiError(error instanceof Error ? error.message : "Cart operation failed");
+      toast.error(error instanceof Error ? error.message : "Cart operation failed");
+      return false;
     }
   }
 
   async function addToCart(vehicle: Vehicle) {
-    if (!currentUser) return setView("signin");
+    if (!currentUser) { setView("signin"); return false; }
     const existing = cart.find((item) => item.vehicle.id === vehicle.id);
-    await runCartAction(() => existing
+    return runCartAction(() => existing
         ? cartApi.update(currentUser.id, vehicle.id, existing.qty + 1)
         : cartApi.add(currentUser.id, vehicle.id, 1));
   }
@@ -846,7 +782,6 @@ export default function App() {
       }
       const mapped = toVehicle(created);
       setVehicles((items) => [...items, mapped]);
-      setCatalogVehicles((items) => [...items, mapped]);
       if (imageUploadError) {
         setApiError(`${mapped.name} was added, but its photo was not uploaded: ${imageUploadError}`);
       } else {
@@ -876,45 +811,18 @@ export default function App() {
     }
   }
 
-  async function applyFilters() {
-    clearStatus();
-    setIsLoading(true);
-    try {
-      let result: ApiVehicle[];
-      if (keyword.trim()) result = await catalogApi.search(keyword.trim());
-      else if (minPrice && maxPrice) result = await catalogApi.byPriceRange(Number(minPrice), Number(maxPrice));
-      else if (brand !== "All brands") result = await catalogApi.byBrand(brand);
-      else if (shape !== "All shapes") result = await catalogApi.byShape(shape);
-      else if (year !== "All years") result = await catalogApi.byYear(Number(year));
-      else if (sort === "Price: Low to High" || sort === "Price: High to Low") result = await catalogApi.sortPrice();
-      else if (sort === "Lowest km") result = await catalogApi.sortMileage();
-      else result = await catalogApi.list();
-
-      setCatalogVehicles(result.map(toVehicle));
-      setApplied(true);
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Catalogue filter failed");
-    } finally {
-      setIsLoading(false);
+  function applyFilters() {
+    if ((minPrice && Number(minPrice) < 0) || (maxPrice && Number(maxPrice) < 0) || (minRange && Number(minRange) < 0) || (minPrice && maxPrice && Number(minPrice) > Number(maxPrice))) {
+      setApiError("Enter a valid price range and a non-negative minimum range.");
+      return;
     }
+    clearStatus();
+    setApplied(true);
   }
 
-  async function clearFilters() {
-    setKeyword("");
-    setBrand("All brands");
-    setShape("All shapes");
-    setYear("All years");
-    setMinPrice("");
-    setMaxPrice("");
-    setSort("Featured");
-    setApplied(false);
-    clearStatus();
-    try {
-      const result = await catalogApi.list();
-      setCatalogVehicles(result.map(toVehicle));
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Catalogue could not be refreshed");
-    }
+  function clearFilters() {
+    setKeyword(""); setBrand("All brands"); setShape("All shapes"); setYear("All years");
+    setMinPrice(""); setMaxPrice(""); setMinRange(""); setSort("Featured"); setApplied(false); clearStatus();
   }
 
   function toggleCompare(id: number) {
@@ -925,7 +833,7 @@ export default function App() {
   }
 
   const filtered = useMemo(() => {
-    let list = [...catalogVehicles];
+    let list = [...vehicles];
     if (applied) {
       if (keyword.trim()) {
         const normalized = keyword.trim().toLowerCase();
@@ -936,143 +844,34 @@ export default function App() {
       if (year !== "All years") list = list.filter((vehicle) => vehicle.year === Number(year));
       if (minPrice) list = list.filter((vehicle) => vehicle.price >= Number(minPrice));
       if (maxPrice) list = list.filter((vehicle) => vehicle.price <= Number(maxPrice));
+      if (minRange) list = list.filter((vehicle) => vehicle.range >= Number(minRange));
     }
     if (sort === "Price: Low to High") list.sort((a, b) => a.price - b.price);
     else if (sort === "Price: High to Low") list.sort((a, b) => b.price - a.price);
     else if (sort === "Newest") list.sort((a, b) => b.year - a.year);
     else if (sort === "Lowest km") list.sort((a, b) => a.km - b.km);
     return list;
-  }, [catalogVehicles, keyword, brand, shape, year, minPrice, maxPrice, sort, applied]);
+  }, [vehicles, keyword, brand, shape, year, minPrice, maxPrice, minRange, sort, applied]);
 
   const compareVehicles = vehicles.filter((vehicle) => compareIds.includes(vehicle.id));
 
   // ── Nav──────────────────────────────────────
-  const Nav = () => (
-    <header className="bg-white border-b border-border sticky top-0 z-40 shadow-sm">
-      <div className="max-w-6xl mx-auto px-6 h-12 flex items-center justify-between">
-        <button 
-          onClick={() => setView("catalogue")} 
-          className="text-foreground font-bold text-lg transition-all duration-100 hover:opacity-80 active:scale-95" 
-          style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-        >
-          EV Store
-        </button>
-        <nav className="flex items-center gap-5 flex-wrap">
-          {/* VEHICLES TAB */}
-          <button 
-            onClick={() => setView("catalogue")} 
-            className={`text-sm font-medium px-2 py-1 rounded transition-all duration-150 active:scale-95 ${
-              view === "catalogue" 
-                ? "text-slate-900 bg-slate-100/80 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            style={{ fontFamily: "'DM Sans', sans-serif" }}
-          >
-            Vehicles
-          </button>
+  const nav = <StoreNav view={view} cartCount={cartCount} compareCount={compareIds.length} signedIn={!!currentUser} admin={currentUser?.role === "ADMIN"} onNavigate={setView} onChat={() => setChatOpen(true)} onLogout={() => void signOut()} />;
+  const filterChips = [
+    { label: keyword, active: !!keyword.trim(), clear: () => setKeyword("") },
+    { label: brand, active: brand !== "All brands", clear: () => setBrand("All brands") },
+    { label: shape, active: shape !== "All shapes", clear: () => setShape("All shapes") },
+    { label: year, active: year !== "All years", clear: () => setYear("All years") },
+    { label: `From ${fmt(Number(minPrice))}`, active: !!minPrice, clear: () => setMinPrice("") },
+    { label: `Up to ${fmt(Number(maxPrice))}`, active: !!maxPrice, clear: () => setMaxPrice("") },
+    { label: `Range ≥ ${minRange} km*`, active: !!minRange, clear: () => setMinRange("") },
+  ].filter(chip => chip.active);
 
-          {/* HOT DEALS TAB */}
-          <button 
-            onClick={() => setView("hotdeals")} 
-            className={`text-sm font-medium px-2 py-1 rounded flex items-center gap-1 transition-all duration-150 active:scale-95 ${
-              view === "hotdeals" 
-                ? "text-orange-600 bg-orange-50 shadow-[0_0_12px_rgba(234,88,12,0.15)] border border-orange-200" 
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            style={{ fontFamily: "'DM Sans', sans-serif" }}
-          >
-            <Flame size={13} className={view === "hotdeals" ? "text-orange-600 animate-bounce" : "text-orange-500"} /> Hot Deals
-          </button>
+  if (!PUBLIC_VIEWS.includes(view) && (authChecking || !currentUser || (view === "admin" && currentUser.role !== "ADMIN"))) {
+    return <main className="ev-auth"><p role="status">{authChecking ? "Checking your session..." : "Opening sign in..."}</p></main>;
+  }
 
-          {/* COMPARE TAB */}
-          {compareIds.length > 0 && (
-            <button 
-              onClick={() => setView("compare")} 
-              className={`text-sm font-medium px-2 py-1 rounded flex items-center gap-1 transition-all duration-150 active:scale-95 ${
-                view === "compare" 
-                  ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
-            >
-              <GitCompare size={13} /> Compare ({compareIds.length})
-            </button>
-          )}
-
-          {/* CHATBOT ICON BUTTON */}
-          <button 
-            onClick={() => setChatOpen(true)} 
-            className="text-sm text-muted-foreground hover:text-foreground p-1 rounded-md flex items-center gap-1 transition-all duration-100 hover:bg-slate-50 active:scale-95" 
-            style={{ fontFamily: "'DM Sans', sans-serif" }}
-          >
-            <MessageCircle size={14} /> Chatbot
-          </button>
-
-          {/* CART TAB */}
-          <button 
-            onClick={() => setView("cart")} 
-            className={`text-sm font-medium px-2 py-1 rounded flex items-center gap-1 transition-all duration-150 active:scale-95 ${
-              view === "cart" 
-                ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300" 
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            style={{ fontFamily: "'DM Sans', sans-serif" }}
-          >
-            <ShoppingCart size={14} />
-            {cartCount > 0 && <span className="bg-accent text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">{cartCount}</span>}
-          </button>
-
-          {currentUser?.role === "ADMIN" && (
-            <button
-              onClick={() => setView("admin")}
-              className={`text-sm font-medium px-2 py-1 rounded transition-all duration-150 active:scale-95 ${
-                view === "admin"
-                  ? "text-slate-900 bg-slate-100 shadow-[0_0_12px_rgba(15,23,42,0.12)] border border-slate-300"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
-            >
-              Admin
-            </button>
-          )}
-          
-          {/* MY ACCOUNT PROFILE TRIGGER COMPONENT */}
-          <button
-            onClick={() => setView("account")}
-            className={`flex items-center gap-2 pl-3 border-l border-border rounded-md px-2 py-1 transition-all duration-150 active:scale-[0.97] ${
-              view === "account"
-                ? "bg-slate-900 text-white shadow-[0_4px_15px_rgba(15,23,42,0.25)] border border-slate-800"
-                : "hover:bg-slate-100 hover:shadow-[0_0_12px_rgba(0,0,0,0.06)] text-foreground"
-            }`}
-          >
-            <div className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center pointer-events-none transition-colors ${
-              view === "account" ? "bg-white text-slate-900" : "bg-accent text-white"
-            }`}>
-              {userName.split(" ").map((n) => n).join("").slice(0, 2).toUpperCase()}
-            </div>
-            <span className={`text-sm hidden md:block pointer-events-none ${view === "account" ? "text-white" : "text-foreground"}`} style={{ fontFamily: "'DM Sans', sans-serif" }}>{userName}</span>
-            <span 
-              onClick={(e) => { 
-                e.stopPropagation();
-                void signOut();
-              }} 
-              className={`text-xs border rounded-sm px-2 py-0.5 transition-colors flex items-center gap-1 active:scale-95 cursor-pointer ml-1 ${
-                view === "account" 
-                  ? "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white" 
-                  : "bg-white border-border text-muted-foreground hover:bg-slate-200"
-              }`}
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
-            >
-              <LogOut size={11} /> Logout
-            </span>
-          </button>
-
-        </nav>
-      </div>
-    </header>
-  );
-
-  if (view === "home") return <LandingPage />;
+  if (view === "home") return <LandingPage loading={isLoading} featured={<>{vehicles.slice(0, 3).map(v => <VehicleCard key={v.id} v={v} onView={() => void openVehicle(v)} onAddCart={() => void addToCart(v)} compareIds={compareIds} onToggleCompare={toggleCompare} />)}</>} />;
 
 if (view === "signin") {
   return (
@@ -1110,7 +909,7 @@ if (view === "signin") {
   if (view === "account") {
   return (
     <div className="min-h-screen bg-slate-50">
-      <Nav />
+      {nav}
       <AccountPage userName={userName} setView={setView} />
     </div>
   );
@@ -1118,8 +917,8 @@ if (view === "signin") {
 
   // ── Catalogue ─────────────────────────────────────────────────────────────────
   if (view === "catalogue") return (
-      <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <Nav />
+      <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        {nav}
         {showCalc && <LoanCalculator onClose={() => setShowCalc(false)} defaultPrice={calcPrice} />}
         <Chatbot open={chatOpen} setOpen={setChatOpen} />
         <main className="max-w-6xl mx-auto px-6 py-8">
@@ -1137,38 +936,22 @@ if (view === "signin") {
             </button>
           </div>
 
-          {/* filters */}
-          <div className="bg-white border border-border rounded-sm p-4 mb-6 mt-4">
-            <div className="flex flex-wrap gap-3 items-center mb-3">
-              <input
-                  type="search"
-                  placeholder="Search brand or model"
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void applyFilters();
-                    }
-                  }}
-                  className="bg-white border border-border rounded px-3 py-1.5 text-sm w-48 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <Select value={brand} onChange={setBrand} options={BRANDS} />
-              <Select value={shape} onChange={setShape} options={SHAPES} />
-              <Select value={year} onChange={setYear} options={YEARS} />
-              <input type="number" placeholder="Minimum price" value={minPrice} onChange={(e) => setMinPrice(e.target.value)}
-                     className="bg-white border border-border rounded px-3 py-1.5 text-sm w-36 text-foreground focus:outline-none focus:ring-1 focus:ring-accent" />
-              <input type="number" placeholder="Maximum price" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)}
-                     className="bg-white border border-border rounded px-3 py-1.5 text-sm w-36 text-foreground focus:outline-none focus:ring-1 focus:ring-accent" />
+          <form className="store-filters" onSubmit={(event) => { event.preventDefault(); applyFilters(); }}>
+            <div className="store-filters__heading"><h2>Find your fit</h2><button type="button" onClick={clearFilters}>Clear all</button></div>
+            <div className="store-filters__fields">
+              <label className="store-filters__search">Search<input type="search" placeholder="Brand or model" value={keyword} onChange={e => setKeyword(e.target.value)} /></label>
+              <label>Brand<select value={brand} onChange={e => setBrand(e.target.value)}>{["All brands", ...new Set(vehicles.map(v => v.brand))].map(x => <option key={x}>{x}</option>)}</select></label>
+              <label>Body type<select value={shape} onChange={e => setShape(e.target.value)}>{["All shapes", ...new Set(vehicles.map(v => v.shape))].map(x => <option key={x}>{x}</option>)}</select></label>
+              <label>Year<select value={year} onChange={e => setYear(e.target.value)}>{["All years", ...new Set(vehicles.map(v => String(v.year)))].map(x => <option key={x}>{x}</option>)}</select></label>
+              <label>Min. price ($)<input type="number" min="0" placeholder="No minimum" value={minPrice} onChange={e => setMinPrice(e.target.value)} /></label>
+              <label>Max. price ($)<input type="number" min="0" placeholder="No maximum" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} /></label>
+              <label>Min. range (km)*<input type="number" min="0" placeholder="Any range" value={minRange} onChange={e => setMinRange(e.target.value)} /></label>
+              <label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}>{SORTS.map(x => <option key={x}>{x}</option>)}</select></label>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">Sort</span>
-              <Select value={sort} onChange={setSort} options={SORTS} />
-              <button onClick={() => void applyFilters()} className="text-sm bg-[#555555] text-white rounded-sm px-4 py-1.5 font-medium hover:bg-[#444444] transition-colors">Apply</button>
-              <button onClick={() => void clearFilters()}
-                      className="text-sm text-muted-foreground border border-border rounded-sm px-4 py-1.5 hover:bg-secondary transition-colors">Clear</button>
-            </div>
-          </div>
+            <div className="store-filters__footer"><p>*Range uses illustrative sample specifications.</p><button className="store-primary" type="submit">Apply filters</button></div>
+            {applied && filterChips.length > 0 && <div className="store-filter-chips" aria-label="Active filters">{filterChips.map(chip => <button type="button" key={chip.label} onClick={chip.clear} aria-label={`Remove filter: ${chip.label}`}>{chip.label}<X size={13} aria-hidden="true" /></button>)}</div>}
+          </form>
+          <p className="store-results" aria-live="polite">{isLoading ? 'Finding your next drive…' : `${filtered.length} vehicle${filtered.length === 1 ? '' : 's'} to explore`}</p>
 
           {compareIds.length > 0 && (
               <div className="mb-4 flex items-center gap-3 bg-foreground text-white px-4 py-2 rounded-sm text-sm">
@@ -1180,11 +963,11 @@ if (view === "signin") {
           )}
 
           {isLoading ? (
-              <div className="text-center py-20 text-muted-foreground text-sm">Loading vehicles from the server…</div>
+              <VehicleSkeletons />
           ) : filtered.length === 0 ? (
               <div className="text-center py-20 text-muted-foreground text-sm">No vehicles match your filters.</div>
           ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="vehicle-grid">
                 {filtered.map((v) => (
                     <VehicleCard key={v.id} v={v}
                                  onView={() => void openVehicle(v)}
@@ -1201,8 +984,8 @@ if (view === "signin") {
 
   // ── Hot Deals ─────────────────────────────────────────────────────────────────
   if (view === "hotdeals") return (
-      <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <Nav />
+      <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        {nav}
         <Chatbot open={chatOpen} setOpen={setChatOpen} />
         <main className="max-w-6xl mx-auto px-6 py-8">
           <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
@@ -1211,7 +994,7 @@ if (view === "signin") {
             <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Hot Deals</h1>
           </div>
           <p className="text-sm text-muted-foreground mb-8">Limited-time offers on our most popular electric vehicles. Don&apos;t miss out.</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {isLoading ? <VehicleSkeletons /> : <div className="vehicle-grid">
             {hotDeals.map((v) => (
                 <VehicleCard key={v.id} v={v}
                              onView={() => void openVehicle(v)}
@@ -1220,7 +1003,9 @@ if (view === "signin") {
                              onToggleCompare={toggleCompare}
                 />
             ))}
-          </div>
+          </div>}
+          {!isLoading && hotDeals.length === 0 && <p className="store-results">No hot deals right now. Explore the full vehicle catalogue for more options.</p>}
+          <p className="store-results">*Range figures use illustrative sample specifications.</p>
         </main>
       </div>
   );
@@ -1245,8 +1030,8 @@ if (view === "signin") {
     }
 
     return (
-        <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-          <Nav />
+        <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+          {nav}
           {showCalc && <LoanCalculator onClose={() => setShowCalc(false)} defaultPrice={calcPrice} />}
           <Chatbot open={chatOpen} setOpen={setChatOpen} />
           <main className="max-w-4xl mx-auto px-6 py-8">
@@ -1256,27 +1041,7 @@ if (view === "signin") {
             </button>
 
             <div className="bg-card border border-border rounded-sm overflow-hidden mb-6">
-              <div className="h-56 flex items-center justify-center relative overflow-hidden" style={{ background: selected.color }}>
-                <img
-                  src={vehicleImage(selected)}
-                  alt={`${selected.name} electric vehicle`}
-                  className="h-full w-full object-cover"
-                  onError={(event) => {
-                    event.currentTarget.src = fallbackVehicleImage(selected);
-                  }}
-                />
-                <div
-                  className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent"
-                  aria-hidden="true"
-                />
-                {selected.hotDeal && (
-                    <div className="absolute top-4 left-4">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: "#00c96b" }}>
-                    <Flame size={10} className="text-orange-400" /> Hot deal
-                  </span>
-                    </div>
-                )}
-              </div>
+              <VehicleGallery key={selected.id} src={vehicleImage(selected)} fallback={fallbackVehicleImage(selected)} name={selected.name} isIllustration={!selected.imageUrl} />
 
               <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
@@ -1295,8 +1060,7 @@ if (view === "signin") {
                     ))}
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    The {selected.name} is a premium electric vehicle offering exceptional range and performance.
-                    With advanced autopilot features and a minimalist interior, it sets the standard for modern EV design.
+                    Explore this {selected.year} {selected.shape.toLowerCase()}, compare it with your favourites, or use the payment calculator to plan your purchase. Range, seating and charging figures shown here are illustrative sample specifications.
                   </p>
                 </div>
 
@@ -1314,7 +1078,7 @@ if (view === "signin") {
                   </div>
                   {selected.available && (
                       <div className="flex flex-col gap-3">
-                        <button onClick={() => { void addToCart(selected); setView("cart"); }}
+                        <button onClick={async () => { if (await addToCart(selected)) setView("cart"); }}
                                 className="w-full py-3 bg-foreground text-white rounded-sm font-semibold hover:opacity-90 transition-opacity"
                                 style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em", fontSize: "1rem" }}>
                           ADD TO CART
@@ -1333,6 +1097,7 @@ if (view === "signin") {
               </div>
             </div>
 
+            <div className="vehicle-purchase-bar"><div><span>{selected.name}</span><strong>{fmt(selected.price)}</strong></div><button className="store-primary" disabled={!selected.available} onClick={() => void addToCart(selected)}>{selected.available ? 'Add to cart' : 'Out of stock'}</button></div>
             {/* Reviews */}
             <div className="bg-card border border-border rounded-sm p-6 mb-4">
               <h2 className="text-xl font-bold text-foreground mb-4" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
@@ -1390,8 +1155,8 @@ if (view === "signin") {
 
   // ── Compare ─────────────────────────────────────────────────────────────────────
   if (view === "compare") return (
-      <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <Nav />
+      <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        {nav}
         <Chatbot open={chatOpen} setOpen={setChatOpen} />
         <main className="max-w-6xl mx-auto px-6 py-8">
           <div className="flex items-center justify-between mb-6">
@@ -1456,7 +1221,7 @@ if (view === "signin") {
                     {compareVehicles.map((v) => (
                         <td key={v.id} className="p-3 text-center">
                           {v.available && (
-                              <button onClick={() => { void addToCart(v); setView("cart"); }}
+                              <button onClick={async () => { if (await addToCart(v)) setView("cart"); }}
                                       className="text-xs bg-foreground text-white rounded-sm px-3 py-1.5 hover:opacity-90 transition-opacity">
                                 Add to cart
                               </button>
@@ -1474,8 +1239,8 @@ if (view === "signin") {
 
   // ── Cart ────────────────────────────────────────────────────────────────────────
   if (view === "cart") return (
-      <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <Nav />
+      <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        {nav}
         <Chatbot open={chatOpen} setOpen={setChatOpen} />
         <main className="max-w-4xl mx-auto px-6 py-8">
           <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
@@ -1692,8 +1457,8 @@ if (view === "signin") {
   }
 
   if (view === "checkout") return (
-      <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <Nav />
+      <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        {nav}
         <main className="max-w-4xl mx-auto px-6 py-8">
           <button onClick={() => setView("cart")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-6"><ArrowLeft size={14} /> Back to cart</button>
           <h1 className="text-3xl font-bold text-foreground mb-6" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Checkout</h1>
@@ -1794,8 +1559,8 @@ if (view === "signin") {
 
   // ── Confirmed ─────────────────────────────────────────────────────────────────
   if (view === "confirmed") return (
-      <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <Nav />
+      <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        {nav}
         <main className="max-w-xl mx-auto px-6 py-16 text-center">
           <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mx-auto mb-6">
             <Check size={32} className="text-white" />
@@ -1855,8 +1620,8 @@ if (view === "signin") {
     const maxRevenue = Math.max(1, ...sales.map((item) => item.revenue));
 
     return (
-        <div className="min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-          <Nav />
+        <div className="store-page min-h-screen bg-background" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+          {nav}
           <main className="max-w-6xl mx-auto px-6 py-8">
             <StatusBanner error={apiError} message={apiMessage} onClear={clearStatus} />
             <div className="flex items-center justify-between mb-6">
