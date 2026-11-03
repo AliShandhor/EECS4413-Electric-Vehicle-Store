@@ -16,7 +16,7 @@ export default function StoreNav({ view, cartCount, compareCount, signedIn, admi
       <nav id="store-menu" aria-label="Store navigation" className={`store-nav__links ${open ? 'is-open' : ''}`}>
         {links.map(([target, label]) => <button key={target} aria-current={view === target || (target === 'catalogue' && view === 'detail') ? 'page' : undefined} onClick={() => navigate(target)}>{label}</button>)}
         <button onClick={() => { setOpen(false); onChat(); }}><MessageCircle size={16} aria-hidden="true" />Ask EV Store</button>
-        <button aria-current={view === 'cart' ? 'page' : undefined} onClick={() => navigate(signedIn ? 'cart' : 'signin')}><ShoppingCart size={17} aria-hidden="true" />Cart <span className="store-nav__count">{cartCount}</span></button>
+        <button aria-current={view === 'cart' ? 'page' : undefined} onClick={() => navigate('cart')}><ShoppingCart size={17} aria-hidden="true" />Cart <span className="store-nav__count">{cartCount}</span></button>
         {signedIn ? <><button aria-current={view === 'account' ? 'page' : undefined} onClick={() => navigate('account')}>My account</button><button aria-label="Sign out" onClick={onLogout}><LogOut size={17} aria-hidden="true" /></button></> : <button className="store-nav__signin" onClick={() => navigate('signin')}>Sign In</button>}
       </nav>
     </div>

@@ -78,7 +78,7 @@ function isView(value: unknown): value is View {
   return typeof value === "string" && VIEWS.includes(value as View);
 }
 
-const PUBLIC_VIEWS: View[] = ["home", "signin", "register", "catalogue", "detail", "hotdeals", "compare"];
+const AUTH_REQUIRED_VIEWS: View[] = ["checkout", "confirmed", "admin", "account"];
 
 function navigationUrl(view: View, vehicleId?: number): string {
   if (view === "home") return "/";
@@ -620,7 +620,7 @@ export default function App() {
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (authChecking || PUBLIC_VIEWS.includes(view)) return;
+    if (authChecking || !AUTH_REQUIRED_VIEWS.includes(view)) return;
     const redirect = !currentUser ? "signin" : view === "admin" && currentUser.role !== "ADMIN" ? "catalogue" : null;
     if (redirect) {
       window.history.replaceState({ evs: true, view: redirect }, "", navigationUrl(redirect));
@@ -867,7 +867,7 @@ export default function App() {
     { label: `Range ≥ ${minRange} km*`, active: !!minRange, clear: () => setMinRange("") },
   ].filter(chip => chip.active);
 
-  if (!PUBLIC_VIEWS.includes(view) && (authChecking || !currentUser || (view === "admin" && currentUser.role !== "ADMIN"))) {
+  if (AUTH_REQUIRED_VIEWS.includes(view) && (authChecking || !currentUser || (view === "admin" && currentUser.role !== "ADMIN"))) {
     return <main className="ev-auth"><p role="status">{authChecking ? "Checking your session..." : "Opening sign in..."}</p></main>;
   }
 
