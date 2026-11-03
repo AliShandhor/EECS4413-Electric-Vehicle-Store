@@ -24,6 +24,8 @@ import {
 import SignInForm from './components/ui/SignInForm';
 import SignUpForm from './components/ui/SignUpForm';
 import AccountPage from "./components/ui/AccountPage";
+import LandingPage from "./components/LandingPage";
+import AuthShell from "./components/AuthShell";
 import sedanImage from "../assets/vehicles/ev-sedan.png";
 import suvImage from "../assets/vehicles/ev-suv.png";
 import hatchbackImage from "../assets/vehicles/ev-hatchback.png";
@@ -63,10 +65,10 @@ type CartItem = {
   lineTotal: number;
 };
 type Review = { id: number; vehicleId: number; author: string; rating: number; comment: string; date: string };
-type View = "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals" | "account";
+type View = "home" | "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals" | "account";
 type NavigationTarget = { view: View; vehicleId?: number };
 
-const VIEWS: View[] = ["signin", "register", "catalogue", "detail", "cart", "checkout", "confirmed", "admin", "compare", "hotdeals", "account"];
+const VIEWS: View[] = ["home", "signin", "register", "catalogue", "detail", "cart", "checkout", "confirmed", "admin", "compare", "hotdeals", "account"];
 
 function isView(value: unknown): value is View {
   return typeof value === "string" && VIEWS.includes(value as View);
@@ -90,7 +92,7 @@ function readNavigation(state: unknown = window.history.state): NavigationTarget
   const route = window.location.hash.replace(/^#\/?/, "");
   const vehicleMatch = route.match(/^vehicles\/(\d+)$/);
   if (vehicleMatch) return { view: "detail", vehicleId: Number(vehicleMatch[1]) };
-  return isView(route) ? { view: route } : { view: "signin" };
+  return isView(route) ? { view: route } : { view: "home" };
 }
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -503,27 +505,6 @@ function LoanCalculator({ onClose, defaultPrice }: { onClose: () => void; defaul
   );
 }
 
-function AuthShell({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-background flex flex-col" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <header className="bg-white border-b border-border">
-        <div className="max-w-6xl mx-auto px-6 h-12 flex items-center">
-          <span className="text-foreground font-bold text-lg" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>EV Store</span>
-        </div>
-      </header>
-      <div className="flex-1 flex items-center justify-center px-4 py-16">
-        <div className="w-full max-w-sm">
-          <div className="mb-7">
-            <h1 className="text-4xl font-bold text-foreground mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{title}</h1>
-            <p className="text-sm text-muted-foreground">{sub}</p>
-          </div>
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -693,7 +674,7 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) {
-      if (view !== "signin" && view !== "register") setView("signin");
+      if (view !== "home" && view !== "signin" && view !== "register") setView("signin");
       return;
     }
     void authApi.validate().then(({ valid }) => {
@@ -1091,6 +1072,8 @@ export default function App() {
     </header>
   );
 
+  if (view === "home") return <LandingPage />;
+
 if (view === "signin") {
   return (
     <AuthShell title="Sign in" sub="Welcome back to EV Store.">
@@ -1099,7 +1082,8 @@ if (view === "signin") {
         setForm={setSignInForm}
         onSubmit={(event) => void handleSignIn(event)}
         error={authError}
-        setView={setView}
+        loading={authLoading}
+        setView={(next) => { setAuthError(""); setView(next); }}
       />
       {authLoading && <p className="text-xs text-muted-foreground text-center mt-3">Signing in…</p>}
     </AuthShell>
@@ -1109,13 +1093,14 @@ if (view === "signin") {
 
   if (view === "register") {
     return (
-      <AuthShell title="Create account" sub="Join EV Store and start browsing.">
+      <AuthShell title="Create an account" sub="Find your next electric vehicle with EV Store.">
         <SignUpForm
           form={registerForm}
           setForm={setRegisterForm}
           onSubmit={(event) => void handleRegister(event)}
           error={authError}
-          setView={setView}
+          loading={authLoading}
+          setView={(next) => { setAuthError(""); setView(next); }}
         />
         {authLoading && <p className="text-xs text-muted-foreground text-center mt-3">Creating your account…</p>}
       </AuthShell>

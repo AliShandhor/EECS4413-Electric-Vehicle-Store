@@ -1,57 +1,32 @@
-import React from "react";
-
-type View = "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals";
+﻿import React from "react";
+import { ArrowRight } from "lucide-react";
+import AuthField from "./AuthField";
 
 interface SignUpProps {
   form: { name: string; email: string; password: string; confirm: string };
   setForm: React.Dispatch<React.SetStateAction<{ name: string; email: string; password: string; confirm: string }>>;
   onSubmit: (e: React.FormEvent) => void;
   error: string;
-  setView: React.Dispatch<React.SetStateAction<View>>;
+  loading: boolean;
+  setView: (view: "signin" | "register") => void;
 }
 
-const SignUpForm: React.FC<SignUpProps> = React.memo(({ form, setForm, onSubmit, error, setView }) => {
-  return (
-    <form
-      className="bg-card border border-border rounded-sm p-6 flex flex-col gap-4"
-      onSubmit={onSubmit}
-    >
-      {error && <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-sm">{error}</p>}
-      {[
-        { label: "Full Name", key: "name", type: "text", placeholder: "John Smith" },
-        { label: "Email Address", key: "email", type: "email", placeholder: "john.smith@example.com" },
-        { label: "Password", key: "password", type: "password", placeholder: "Enter your password" },
-        { label: "Confirm Password", key: "confirm", type: "password", placeholder: "Confirm your password" },
-      ].map(({ label, key, type, placeholder }) => (
-        <div key={key}>
-          <label className="text-xs text-muted-foreground block mb-1">{label}</label>
-          <input
-            required
-            type={type}
-            placeholder={placeholder}
-            value={form[key as keyof typeof form]}
-            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-            className="w-full border border-border rounded-sm px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </div>
-      ))}
-      <button
-        type="submit"
-        className="w-full py-2.5 bg-foreground text-white rounded-sm font-semibold hover:opacity-90 transition-opacity mt-1"
-      >
-        CREATE ACCOUNT
-      </button>
-      <p className="text-center mt-3">
-        Already have an account?{" "}
-        <button
-          onClick={() => { setView("signin"); }}
-          className="text-xs text-muted-foreground hover:text-foreground underline"
-        >
-          Sign in
-        </button>
-      </p>
-    </form>
-  );
-});
+const SignUpForm: React.FC<SignUpProps> = React.memo(({ form, setForm, onSubmit, error, loading, setView }) => (
+  <form className="ev-auth__form" onSubmit={onSubmit} aria-busy={loading}>
+    {error && <p className="ev-auth__error" role="alert">{error}</p>}
+    <AuthField id="signup-name" label="Full name" type="text" placeholder="Alex Morgan" autoComplete="name"
+      value={form.name} onChange={(name) => setForm({ ...form, name })} />
+    <AuthField id="signup-email" label="Email address" type="email" placeholder="you@example.com" autoComplete="email"
+      value={form.email} onChange={(email) => setForm({ ...form, email })} />
+    <AuthField id="signup-password" label="Password" type="password" placeholder="Create a password" autoComplete="new-password"
+      minLength={8} hint="Use at least 8 characters." value={form.password} onChange={(password) => setForm({ ...form, password })} />
+    <AuthField id="signup-confirm" label="Confirm password" type="password" placeholder="Re-enter your password" autoComplete="new-password"
+      minLength={8} value={form.confirm} onChange={(confirm) => setForm({ ...form, confirm })} />
+    <button type="submit" className="ev-auth__submit" disabled={loading}>
+      {loading ? "Creating your account…" : "Sign Up"}<ArrowRight size={18} aria-hidden="true" />
+    </button>
+    <p className="ev-auth__switch">Already have an account? <button type="button" disabled={loading} onClick={() => setView("signin")}>Sign in</button></p>
+  </form>
+));
 
 export default SignUpForm;
