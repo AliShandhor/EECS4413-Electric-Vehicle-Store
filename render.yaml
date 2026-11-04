@@ -3,6 +3,7 @@ services:
     name: eecs4413-ev-store
     runtime: docker
     plan: free
+    branch: main-deployment
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     envVars:
