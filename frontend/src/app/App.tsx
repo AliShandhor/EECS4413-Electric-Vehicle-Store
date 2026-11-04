@@ -27,6 +27,11 @@ import LandingPage from "./components/LandingPage";
 import AuthShell from "./components/AuthShell";
 import StoreNav from "./components/StoreNav";
 import VehicleGallery from "./components/VehicleGallery";
+import Matchmaker from './components/Matchmaker';
+import ShortlistTray from './components/ShortlistTray';
+import VehicleStory from './components/VehicleStory';
+import { useShortlist } from './useShortlist';
+import '../styles/discovery.css';
 import VehicleSkeletons from "./components/VehicleSkeletons";
 import { toast } from "sonner";
 import "../styles/store.css";
@@ -38,7 +43,7 @@ import truckImage from "../assets/vehicles/ev-truck.png";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Vehicle = {
+export type Vehicle = {
   id: number; name: string; brand: string; shape: string; year: number;
   km: number; country: string; price: number; available: boolean;
   hotDeal: boolean; color: string; iconColor: string; range: number;
@@ -69,10 +74,10 @@ type CartItem = {
   lineTotal: number;
 };
 type Review = { id: number; vehicleId: number; author: string; rating: number; comment: string; date: string };
-type View = "home" | "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals" | "account";
+type View = "matchmaker" | "home" | "signin" | "register" | "catalogue" | "detail" | "cart" | "checkout" | "confirmed" | "admin" | "compare" | "hotdeals" | "account";
 type NavigationTarget = { view: View; vehicleId?: number };
 
-const VIEWS: View[] = ["home", "signin", "register", "catalogue", "detail", "cart", "checkout", "confirmed", "admin", "compare", "hotdeals", "account"];
+const VIEWS: View[] = ["matchmaker", "home", "signin", "register", "catalogue", "detail", "cart", "checkout", "confirmed", "admin", "compare", "hotdeals", "account"];
 
 function isView(value: unknown): value is View {
   return typeof value === "string" && VIEWS.includes(value as View);
@@ -127,8 +132,7 @@ type VehicleSource = {
 
 function toVehicle(source: VehicleSource): Vehicle {
   const id = source.id ?? source.vehicleId ?? 0;
-  const seed = VEHICLES.find((vehicle) => vehicle.id === id)
-      ?? VEHICLES.find((vehicle) => vehicle.brand === source.brand && vehicle.name.endsWith(source.model));
+  const seed = VEHICLES.find((vehicle) => vehicle.brand === source.brand && vehicle.name.endsWith(source.model));
 
   return {
     id,
@@ -435,15 +439,16 @@ function LoanCalculator({ onClose, defaultPrice }: { onClose: () => void; defaul
 
 export default function App() {
   const [view, setView] = useState<View>(() => readNavigation().view);
-  const [selected, setSelected] = useState<Vehicle | null>(() => {
-    const vehicleId = readNavigation().vehicleId;
-    return VEHICLES.find((vehicle) => vehicle.id === vehicleId) ?? null;
-  });
+  const [selected, setSelected] = useState<Vehicle | null>(null);
+  const [detailId, setDetailId] = useState<number | undefined>(() => readNavigation().vehicleId);
+  const [detailError, setDetailError] = useState('');
+  const [inventoryStatus, setInventoryStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [inventoryRevision, setInventoryRevision] = useState(0);
   const historyInitialized = useRef(false);
-  const [vehicles, setVehicles] = useState<Vehicle[]>(VEHICLES);
-  const [hotDeals, setHotDeals] = useState<Vehicle[]>(VEHICLES.filter((vehicle) => vehicle.hotDeal));
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [hotDeals, setHotDeals] = useState<Vehicle[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [compareIds, setCompareIds] = useState<number[]>([]);
+  const { ids: compareIds, setIds: setCompareIds, toggle: toggleCompare, persistent: shortlistPersistent } = useShortlist();
   const [savedItems, setSavedItems] = useState<Vehicle[]>([]);
   const [salesReport, setSalesReport] = useState<SalesReport | null>(null);
   const [usageReport, setUsageReport] = useState<UsageReport | null>(null);
@@ -508,7 +513,7 @@ export default function App() {
   useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [view]);
 
   useEffect(() => {
-    const vehicleId = view === "detail" ? selected?.id : undefined;
+    const vehicleId = view === "detail" ? detailId : undefined;
     const url = navigationUrl(view, vehicleId);
     const state = { evs: true, view, vehicleId };
 
@@ -520,23 +525,16 @@ export default function App() {
     } else {
       window.history.replaceState(state, "", url);
     }
-  }, [view, selected?.id]);
+  }, [view, detailId]);
 
   useEffect(() => {
     function restoreFromHistory() {
       const target = readNavigation();
 
-      if (target.view === "detail" && target.vehicleId) {
-        const vehicle = vehicles.find((item) => item.id === target.vehicleId);
-        if (vehicle) {
-          setSelected(vehicle);
-        } else {
-          void catalogApi.details(target.vehicleId)
-              .then((result) => setSelected(toVehicle(result)))
-              .catch(() => setView("catalogue"));
-        }
+      if (target.view === "detail") {
+        setDetailId(target.vehicleId);
+        setSelected(vehicles.find(item => item.id === target.vehicleId) ?? null);
       }
-
       setView(target.view);
     }
 
@@ -567,6 +565,7 @@ export default function App() {
 
     async function initialize() {
       setIsLoading(true);
+      setInventoryStatus("loading");
       clearStatus();
       const [vehicleResult, dealsResult, accessoryResult] = await Promise.allSettled([
         catalogApi.list(),
@@ -578,8 +577,10 @@ export default function App() {
       if (vehicleResult.status === "fulfilled") {
         const mapped = vehicleResult.value.map(toVehicle);
         setVehicles(mapped);
+        setInventoryStatus("ready");
 
       } else {
+        setInventoryStatus("error");
         setApiError(`Catalogue could not be loaded: ${vehicleResult.reason instanceof Error ? vehicleResult.reason.message : "Unknown error"}`);
       }
       if (dealsResult.status === "fulfilled") setHotDeals(dealsResult.value.map(toVehicle));
@@ -599,7 +600,7 @@ export default function App() {
 
     void initialize();
     return () => { active = false; };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, inventoryRevision]);
 
   useEffect(() => {
     let active = true;
@@ -801,14 +802,10 @@ export default function App() {
     }
   }
 
-  async function openVehicle(vehicle: Vehicle) {
+  function openVehicle(vehicle: Vehicle) {
     setSelected(vehicle);
+    setDetailId(vehicle.id);
     setView("detail");
-    try {
-      setSelected(toVehicle(await catalogApi.details(vehicle.id)));
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Vehicle details could not be loaded");
-    }
   }
 
   function applyFilters() {
@@ -823,13 +820,6 @@ export default function App() {
   function clearFilters() {
     setKeyword(""); setBrand("All brands"); setShape("All shapes"); setYear("All years");
     setMinPrice(""); setMaxPrice(""); setMinRange(""); setSort("Featured"); setApplied(false); clearStatus();
-  }
-
-  function toggleCompare(id: number) {
-    setCompareIds((previous) =>
-        previous.includes(id) ? previous.filter((value) => value !== id)
-            : previous.length < 3 ? [...previous, id] : previous
-    );
   }
 
   const filtered = useMemo(() => {
@@ -853,7 +843,7 @@ export default function App() {
     return list;
   }, [vehicles, keyword, brand, shape, year, minPrice, maxPrice, minRange, sort, applied]);
 
-  const compareVehicles = vehicles.filter((vehicle) => compareIds.includes(vehicle.id));
+  const compareVehicles = inventoryStatus === "ready" ? compareIds.flatMap(id => vehicles.filter(vehicle => vehicle.id === id)) : [];
 
   // ── Nav──────────────────────────────────────
   const nav = <StoreNav view={view} cartCount={cartCount} compareCount={compareIds.length} signedIn={!!currentUser} admin={currentUser?.role === "ADMIN"} onNavigate={setView} onChat={() => setChatOpen(true)} onLogout={() => void signOut()} />;
@@ -867,6 +857,20 @@ export default function App() {
     { label: `Range ≥ ${minRange} km*`, active: !!minRange, clear: () => setMinRange("") },
   ].filter(chip => chip.active);
 
+  useEffect(() => {
+    if (view !== 'detail') return;
+    let active = true;
+    setDetailError('');
+    if (!detailId) { setDetailError('Choose a vehicle from the catalogue.'); return; }
+    void catalogApi.details(detailId).then(result => {
+      if (active) setSelected(toVehicle(result));
+    }).catch(() => { if (active) setDetailError('This vehicle could not be loaded. Please try again from the catalogue.'); });
+    return () => { active = false; };
+  }, [view, detailId]);
+
+  function renderView() {
+  if (view === 'matchmaker') return <div className="store-page">{nav}<Matchmaker vehicles={vehicles} status={inventoryStatus} onRetry={() => setInventoryRevision(n => n + 1)} onView={openVehicle} onToggle={toggleCompare} ids={compareIds} /></div>;
+  if (view === 'detail' && (!selected || detailError)) return <div className="store-page">{nav}<main className="discovery-page"><p role="status">{detailError || 'Loading vehicle?'}</p><button className="discovery-primary" onClick={() => setView('catalogue')}>Back to catalogue</button></main></div>;
   if (AUTH_REQUIRED_VIEWS.includes(view) && (authChecking || !currentUser || (view === "admin" && currentUser.role !== "ADMIN"))) {
     return <main className="ev-auth"><p role="status">{authChecking ? "Checking your session..." : "Opening sign in..."}</p></main>;
   }
@@ -1043,16 +1047,17 @@ if (view === "signin") {
             <div className="bg-card border border-border rounded-sm overflow-hidden mb-6">
               <VehicleGallery key={selected.id} src={vehicleImage(selected)} fallback={fallbackVehicleImage(selected)} name={selected.name} isIllustration={!selected.imageUrl} />
 
+              <VehicleStory vehicle={selected} />
               <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
                   <h1 className="text-4xl font-bold text-foreground mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{selected.name}</h1>
                   <div className="flex items-center gap-2 mb-1">
                     <StarRating rating={Math.round(avgRating)} />
-                    <span className="text-xs text-muted-foreground">{vehicleReviews.length} review{vehicleReviews.length !== 1 ? "s" : ""}</span>
+                    <span className="text-xs text-muted-foreground">{vehicleReviews.length} demo review{vehicleReviews.length !== 1 ? "s" : ""}</span>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">{selected.year} · {selected.shape} · {selected.country}</p>
                   <div className="grid grid-cols-2 gap-3 mb-6">
-                    {[["Range", selected.range + " km"], ["Seats", String(selected.seats)], ["Fast Charge", selected.charge], ["Mileage", fmtKm(selected.km)]].map(([l, v]) => (
+                    {[["Range (illustrative)", selected.range + " km"], ["Seats (illustrative)", String(selected.seats)], ["Fast charge (illustrative)", selected.charge], ["Listed mileage", fmtKm(selected.km)]].map(([l, v]) => (
                         <div key={l} className="bg-secondary rounded-sm p-3">
                           <p className="text-xs text-muted-foreground mb-0.5">{l}</p>
                           <p className="text-sm font-semibold text-foreground">{v}</p>
@@ -1101,9 +1106,10 @@ if (view === "signin") {
             {/* Reviews */}
             <div className="bg-card border border-border rounded-sm p-6 mb-4">
               <h2 className="text-xl font-bold text-foreground mb-4" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-                Customer Reviews {vehicleReviews.length > 0 && `(${vehicleReviews.length})`}
+                Demo reviews {vehicleReviews.length > 0 && `(${vehicleReviews.length})`}
               </h2>
 
+              <p className="text-xs text-muted-foreground mb-4">Sample reviews and reviews added during this visit are for demonstration only; they are not verified customer feedback and are not saved after reload.</p>
               {vehicleReviews.length === 0 ? (
                   <p className="text-sm text-muted-foreground mb-6">No reviews yet. Be the first to review this vehicle.</p>
               ) : (
@@ -1171,7 +1177,7 @@ if (view === "signin") {
             </button>
           </div>
 
-          {compareVehicles.length < 2 ? (
+          {inventoryStatus !== "ready" ? <div className="discovery-notice"><p>{inventoryStatus === "loading" ? "Loading current inventory?" : "Inventory could not be loaded. Your shortlist is saved."}</p><button onClick={() => setInventoryRevision(n => n + 1)}>Retry inventory</button></div> : compareVehicles.length < 2 ? (
               <div className="bg-card border border-border rounded-sm p-12 text-center">
                 <GitCompare size={36} className="text-muted-foreground mx-auto mb-3" />
                 <p className="text-muted-foreground text-sm">Select at least 2 vehicles from the catalogue to compare.</p>
@@ -1189,7 +1195,7 @@ if (view === "signin") {
                             <Zap size={20} style={{ color: v.iconColor }} fill={v.iconColor} />
                           </div>
                           <p className="text-sm font-bold text-foreground" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{v.name}</p>
-                          <button onClick={() => toggleCompare(v.id)} className="text-xs text-muted-foreground hover:text-destructive mt-1"><X size={12} /></button>
+                          <button aria-label={`Remove ${v.name} from shortlist`} onClick={() => toggleCompare(v.id)} className="text-xs text-muted-foreground hover:text-destructive mt-1"><X size={12} /></button>
                         </td>
                     ))}
                   </tr>
@@ -1199,11 +1205,10 @@ if (view === "signin") {
                     { label: "Price", get: (v: Vehicle) => fmt(v.price) },
                     { label: "Year", get: (v: Vehicle) => String(v.year) },
                     { label: "Shape", get: (v: Vehicle) => v.shape },
-                    { label: "Range", get: (v: Vehicle) => v.range + " km" },
-                    { label: "Seats", get: (v: Vehicle) => String(v.seats) },
-                    { label: "Fast Charge", get: (v: Vehicle) => v.charge },
+                    { label: "Range (illustrative)", get: (v: Vehicle) => v.range + " km" },
+                    { label: "Seats (illustrative)", get: (v: Vehicle) => String(v.seats) },
+                    { label: "Fast charge (illustrative)", get: (v: Vehicle) => v.charge },
                     { label: "Mileage", get: (v: Vehicle) => fmtKm(v.km) },
-                    { label: "Country", get: (v: Vehicle) => v.country },
                     { label: "Availability", get: (v: Vehicle) => v.available ? "In stock" : "Out of stock" },
                     { label: "Hot Deal", get: (v: Vehicle) => v.hotDeal ? "Yes" : "No" },
                   ].map(({ label, get }, i) => (
@@ -1893,4 +1898,6 @@ if (view === "signin") {
   }
 
   return null;
+  }
+  return <div className={`store-app ${compareIds.length ? "has-shortlist" : ""}`}>{renderView()}<ShortlistTray ids={compareIds} vehicles={vehicles} status={inventoryStatus} persistent={shortlistPersistent} onRemove={toggleCompare} onClear={() => setCompareIds([])} onCompare={() => setView("compare")} onView={openVehicle} /></div>;
 }

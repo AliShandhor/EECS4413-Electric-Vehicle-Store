@@ -78,7 +78,7 @@ export default function LandingPage({ featured, loading }: { featured: ReactNode
         <section className="ev-landing__journey" aria-labelledby="journey-title" data-reveal>
           <div className="ev-landing__section-heading"><div><p className="ev-landing__eyebrow">Your journey, simplified</p><h2 id="journey-title">A considered choice.<br />A confident next step.</h2></div></div>
           <div className="ev-landing__steps">
-            <a href="/#/catalogue"><span className="ev-landing__step-number">01 / Discover</span><h3>Find your fit.</h3><p>Explore vehicles, narrow your search, and see the details that matter to you.</p><span className="ev-landing__step-link">Browse vehicles <ArrowUpRight size={16} aria-hidden="true" /></span></a>
+            <a href="/#/matchmaker"><span className="ev-landing__step-number">01 / Discover</span><h3>Find your electric match.</h3><p>A few questions about your budget and daily journeys. Possible fits from our actual inventory.</p><span className="ev-landing__step-link">Find my EV <ArrowUpRight size={16} aria-hidden="true" /></span></a>
             <a href="/#/compare"><span className="ev-landing__step-number">02 / Compare</span><h3>See the difference.</h3><p>Add up to three vehicles to compare their specifications side by side.</p><span className="ev-landing__step-link">Compare vehicles <ArrowUpRight size={16} aria-hidden="true" /></span></a>
             <a href="/signup"><span className="ev-landing__step-number">03 / Make it yours</span><h3>Take the next step.</h3><p>Create your account to build your cart and continue your journey with EV Store.</p><span className="ev-landing__step-link">Create an account <ArrowUpRight size={16} aria-hidden="true" /></span></a>
           </div>

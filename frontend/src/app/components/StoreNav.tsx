@@ -1,12 +1,12 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { Menu, X, Zap, ShoppingCart, MessageCircle, LogOut } from 'lucide-react';
-type Destination = 'home' | 'catalogue' | 'hotdeals' | 'compare' | 'cart' | 'account' | 'admin' | 'signin' | 'register';
+type Destination = 'matchmaker' | 'home' | 'catalogue' | 'hotdeals' | 'compare' | 'cart' | 'account' | 'admin' | 'signin' | 'register';
 type Props = { view: string; cartCount: number; compareCount: number; signedIn: boolean; admin: boolean; onNavigate: (view: Destination) => void; onChat: () => void; onLogout: () => void };
 export default function StoreNav({ view, cartCount, compareCount, signedIn, admin, onNavigate, onChat, onLogout }: Props) {
   const [open, setOpen] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
   useEffect(() => { setOpen(false); }, [view]);
-  const links: [Destination, string][] = [['catalogue', 'Vehicles'], ['hotdeals', 'Hot Deals'], ['compare', `Compare${compareCount ? ` (${compareCount})` : ''}`]];
+  const links: [Destination, string][] = [['catalogue', 'Vehicles'], ['matchmaker', 'Find my EV'], ['hotdeals', 'Hot Deals'], ['compare', `Compare${compareCount ? ` (${compareCount})` : ''}`]];
   if (admin) links.push(['admin', 'Admin']);
   function navigate(target: Destination) { setOpen(false); onNavigate(target); }
   return <header className="store-nav" onKeyDown={(e) => { if (e.key === 'Escape' && open) { setOpen(false); toggle.current?.focus(); } }}>
