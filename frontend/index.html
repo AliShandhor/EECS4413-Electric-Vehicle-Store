@@ -9,12 +9,13 @@
       <meta name="description" content="Browse, compare, and purchase electric vehicles online with secure account management, shopping cart, and admin inventory and sales tools." />
       <meta name="robots" content="noindex, nofollow" />
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
+      <script>if (window.location.hash === "#/signin") window.history.replaceState(null, "", "/");</script>
       
     </head>
 
     <body>
       
-      <div id="root"></div>
+      <div id="root"><main role="status" aria-live="polite" style="min-height:100vh;display:grid;place-items:center;font:16px system-ui,sans-serif;color:#334155">Loading EV Store…</main></div>
       <script type="module" src="/src/main.tsx"></script>
       
     </body>

@@ -4,4 +4,6 @@
   import "./styles/index.css";
   import { Toaster } from "sonner";
 
-  createRoot(document.getElementById("root")!).render(<><App /><Toaster position="top-center" closeButton richColors /></>);
+  const rootElement = document.getElementById("root");
+  if (!rootElement) throw new Error("The app root element is missing");
+  createRoot(rootElement).render(<><App /><Toaster position="top-center" closeButton richColors /></>);
