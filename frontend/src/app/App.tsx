@@ -94,6 +94,7 @@ function navigationUrl(view: View, vehicleId?: number): string {
 
 function readNavigation(): NavigationTarget {
   // The address is authoritative; old history state must not override the homepage.
+  if (window.location.hash === "#/signin") return { view: "home" };
   const route = (window.location.hash.startsWith("#/")
     ? window.location.hash.slice(2)
     : window.location.pathname.replace(/^\/|\/$/g, ""));
@@ -529,6 +530,10 @@ export default function App() {
 
   useEffect(() => {
     function restoreFromHistory() {
+      if (window.location.hash === "#/signin") {
+        window.history.replaceState({ evs: true, view: "home" }, "", "/");
+      }
+
       const target = readNavigation();
 
       if (target.view === "detail") {
@@ -539,7 +544,11 @@ export default function App() {
     }
 
     window.addEventListener("popstate", restoreFromHistory);
-    return () => window.removeEventListener("popstate", restoreFromHistory);
+    window.addEventListener("hashchange", restoreFromHistory);
+    return () => {
+      window.removeEventListener("popstate", restoreFromHistory);
+      window.removeEventListener("hashchange", restoreFromHistory);
+    };
   }, [vehicles]);
 
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
