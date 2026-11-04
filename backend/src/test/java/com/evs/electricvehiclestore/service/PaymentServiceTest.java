@@ -2,8 +2,12 @@ package com.evs.electricvehiclestore.service;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import com.evs.electricvehiclestore.dto.CreditCardDTO;
 
 /**
  * @author Uzma Alam
@@ -45,5 +49,18 @@ class PaymentServiceTest {
         assertTrue(results[3]);
         assertTrue(results[4]);
         assertFalse(results[5]);
+    }
+
+    @Test
+    void deterministicModeUsesCardSuffixForStableDemoResults() {
+        ReflectionTestUtils.setField(paymentService, "approvalMode", "deterministic");
+
+        CreditCardDTO approvedCard = new CreditCardDTO();
+        approvedCard.setCardNumber("4242424242424242");
+        CreditCardDTO deniedCard = new CreditCardDTO();
+        deniedCard.setCardNumber("4242424242420000");
+
+        assertTrue(paymentService.processPayment(approvedCard));
+        assertFalse(paymentService.processPayment(deniedCard));
     }
 }

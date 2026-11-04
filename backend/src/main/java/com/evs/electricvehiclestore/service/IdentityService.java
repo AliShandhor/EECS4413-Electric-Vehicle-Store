@@ -29,6 +29,12 @@ public class IdentityService {
     // UC1: Register
     @Transactional
     public User register(UserDTO userDTO) {
+        if (userDTO == null || userDTO.fullName() == null || userDTO.fullName().isBlank()
+                || userDTO.email() == null || userDTO.email().isBlank()
+                || userDTO.password() == null || userDTO.password().length() < 8) {
+            throw new IllegalArgumentException(
+                    "Full name, a valid email, and a password of at least 8 characters are required.");
+        }
         String normalizedEmail = userDTO.email().trim().toLowerCase();
 
         if (userRepository.existsByEmail(normalizedEmail)) {
@@ -41,7 +47,7 @@ public class IdentityService {
             userDTO.fullName().trim(),
             normalizedEmail,
             hashedPassword,
-            userDTO.role() == null ? "CUSTOMER" : userDTO.role()
+            "CUSTOMER"
         );
 
         return userRepository.save(newUser);
@@ -49,6 +55,9 @@ public class IdentityService {
 
     // UC2: Sign In — returns a real signed JWT
     public Map<String, Object> login(String email, String password) {
+        if (email == null || email.isBlank() || password == null || password.isBlank()) {
+            throw new IllegalArgumentException("Email and password are required.");
+        }
         String normalizedEmail = email.trim().toLowerCase();
 
         Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);

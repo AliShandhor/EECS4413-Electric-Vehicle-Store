@@ -8,6 +8,28 @@ export type ApiVehicle = {
   shape: string;
   hotDeal: boolean;
   available: boolean;
+  imageAvailable: boolean;
+};
+
+export type AuthUser = {
+  id: number;
+  fullName: string;
+  email: string;
+  role: "CUSTOMER" | "ADMIN";
+};
+
+export type AuthSession = {
+  token: string;
+  expiresInSeconds: number;
+  user: AuthUser;
+};
+
+export type Accessory = {
+  id: number;
+  name: string;
+  description: string;
+  price: number;
+  available: boolean;
 };
 
 export type CartResponse = {
@@ -28,6 +50,12 @@ export type CartResponse = {
     hotDeal: boolean;
     available: boolean;
     quantity: number;
+    accessories: Array<{
+      id: number;
+      name: string;
+      description: string;
+      price: number;
+    }>;
     lineTotal: number;
   }>;
   savedCount: number;
@@ -70,7 +98,13 @@ export type OrderSummary = {
     brand: string;
     model: string;
     quantity: number;
-    price: number;
+    unitPrice: number;
+    lineTotal: number;
+    accessories: Array<{
+      id: number;
+      name: string;
+      price: number;
+    }>;
   }>;
 };
 
@@ -107,7 +141,40 @@ export type SalesReport = {
   message: string;
 };
 
+export type UsageReport = {
+  generatedAt: string;
+  totalEvents: number;
+  eventsLast24Hours: number;
+  uniqueAuthenticatedUsers: number;
+  eventsByType: Record<string, number>;
+  dailyActivity: Array<{ date: string; events: number }>;
+  message: string;
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const TOKEN_KEY = "evs.auth.token";
+const USER_KEY = "evs.auth.user";
+
+export const authStorage = {
+  token: () => localStorage.getItem(TOKEN_KEY),
+  user: (): AuthUser | null => {
+    const value = localStorage.getItem(USER_KEY);
+    if (!value) return null;
+    try {
+      return JSON.parse(value) as AuthUser;
+    } catch {
+      return null;
+    }
+  },
+  save: (session: AuthSession) => {
+    localStorage.setItem(TOKEN_KEY, session.token);
+    localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+  },
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
+};
 
 async function parseBody(response: Response): Promise<unknown> {
   const text = await response.text();
@@ -133,11 +200,15 @@ function errorMessage(body: unknown, response: Response): string {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = authStorage.token();
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       Accept: "application/json",
-      ...(options?.body ? { "Content-Type": "application/json" } : {}),
+      ...(options?.body && !(options.body instanceof FormData)
+        ? { "Content-Type": "application/json" }
+        : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });
@@ -174,6 +245,53 @@ export const catalogApi = {
   sortPrice: () => request<ApiVehicle[]>("/api/catalog/vehicles/sort/price"),
   sortMileage: () => request<ApiVehicle[]>("/api/catalog/vehicles/sort/mileage"),
   hotDeals: () => request<ApiVehicle[]>("/api/catalog/vehicles/hot-deals"),
+  add: (vehicle: Omit<ApiVehicle, "id">) =>
+    request<ApiVehicle>("/api/catalog/vehicles", {
+      method: "POST",
+      body: JSON.stringify(vehicle),
+    }),
+  uploadImage: (vehicleId: number, image: File) => {
+    const formData = new FormData();
+    formData.append("image", image);
+    return request<ApiVehicle>(`/api/catalog/vehicles/${vehicleId}/image`, {
+      method: "POST",
+      body: formData,
+    });
+  },
+  imageUrl: (vehicleId: number) =>
+    `${API_BASE}/api/catalog/vehicles/${vehicleId}/image`,
+};
+
+export const authApi = {
+  register: (payload: { fullName: string; email: string; password: string }) =>
+    request<AuthUser>("/api/identity/register", {
+      method: "POST",
+      body: JSON.stringify({ ...payload, role: "CUSTOMER" }),
+    }),
+  login: (email: string, password: string) =>
+    request<AuthSession>("/api/identity/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  logout: () =>
+    request<{ message: string }>("/api/identity/logout", { method: "POST" }),
+  validate: () =>
+    request<{ valid: boolean }>("/api/identity/validate", { method: "POST" }),
+};
+
+export const accessoryApi = {
+  list: () => request<Accessory[]>("/api/accessories"),
+};
+
+export const chatApi = {
+  ask: (
+    message: string,
+    history: Array<{ role: "user" | "assistant"; content: string }>,
+  ) =>
+    request<{ response: string }>("/api/chatbot", {
+      method: "POST",
+      body: JSON.stringify({ message, history }),
+    }),
 };
 
 export const cartApi = {
@@ -209,6 +327,16 @@ export const cartApi = {
       `/api/cart/saved/${vehicleId}?${query({ userId })}`,
       { method: "DELETE" },
     ),
+  addAccessory: (userId: number, vehicleId: number, accessoryId: number) =>
+    request<CartResponse>(
+      `/api/cart/items/${vehicleId}/accessories/${accessoryId}?${query({ userId })}`,
+      { method: "POST" },
+    ),
+  removeAccessory: (userId: number, vehicleId: number, accessoryId: number) =>
+    request<CartResponse>(
+      `/api/cart/items/${vehicleId}/accessories/${accessoryId}?${query({ userId })}`,
+      { method: "DELETE" },
+    ),
 };
 
 export const orderApi = {
@@ -232,7 +360,11 @@ export const orderApi = {
   ): Promise<PaymentResult> => {
     const response = await fetch(`${API_BASE}/api/orders/${orderId}/confirm`, {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(authStorage.token() ? { Authorization: `Bearer ${authStorage.token()}` } : {}),
+      },
       body: JSON.stringify({ creditCard }),
     });
     const body = await parseBody(response);
@@ -249,4 +381,5 @@ export const orderApi = {
 
 export const analyticsApi = {
   sales: () => request<SalesReport>("/api/analytics/sales"),
+  usage: () => request<UsageReport>("/api/analytics/usage"),
 };

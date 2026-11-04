@@ -17,14 +17,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.evs.electricvehiclestore.dto.CartResponse;
+import com.evs.electricvehiclestore.dto.CartResponse.AccessoryView;
 import com.evs.electricvehiclestore.dto.CartResponse.CartItemView;
 import com.evs.electricvehiclestore.dto.CartResponse.SavedVehicleView;
+import com.evs.electricvehiclestore.entity.Accessory;
 import com.evs.electricvehiclestore.entity.Cart;
 import com.evs.electricvehiclestore.entity.CartItem;
 import com.evs.electricvehiclestore.entity.SavedVehicle;
 import com.evs.electricvehiclestore.entity.Vehicle;
 import com.evs.electricvehiclestore.repository.CartItemRepository;
 import com.evs.electricvehiclestore.repository.CartRepository;
+import com.evs.electricvehiclestore.repository.AccessoryRepository;
 import com.evs.electricvehiclestore.repository.SavedVehicleRepository;
 import com.evs.electricvehiclestore.repository.VehicleRepository;
 
@@ -35,17 +38,20 @@ public class CartService {
     private final CartItemRepository cartItemRepository;
     private final SavedVehicleRepository savedVehicleRepository;
     private final VehicleRepository vehicleRepository;
+    private final AccessoryRepository accessoryRepository;
 
     public CartService(
             CartRepository cartRepository,
             CartItemRepository cartItemRepository,
             SavedVehicleRepository savedVehicleRepository,
-            VehicleRepository vehicleRepository
+            VehicleRepository vehicleRepository,
+            AccessoryRepository accessoryRepository
     ) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.savedVehicleRepository = savedVehicleRepository;
         this.vehicleRepository = vehicleRepository;
+        this.accessoryRepository = accessoryRepository;
     }
 
     @Transactional(readOnly = true)
@@ -305,6 +311,46 @@ public class CartService {
         );
     }
 
+    @Transactional
+    public CartResponse addAccessory(Long userId, Long vehicleId, Long accessoryId) {
+        validateUserId(userId);
+        Cart cart = getExistingCart(userId);
+        CartItem item = cartItemRepository.findByCartIdAndVehicleId(cart.getId(), vehicleId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Add the vehicle to your cart before choosing accessories"));
+
+        Accessory accessory = getAccessory(accessoryId);
+        if (!accessory.isAvailable()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This accessory is unavailable");
+        }
+        if (!item.getAccessoryIds().add(accessoryId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This accessory is already selected");
+        }
+        cartItemRepository.save(item);
+        return buildResponse(userId, cart, accessory.getName() + " was added to the vehicle");
+    }
+
+    @Transactional
+    public CartResponse removeAccessory(Long userId, Long vehicleId, Long accessoryId) {
+        validateUserId(userId);
+        Cart cart = getExistingCart(userId);
+        CartItem item = cartItemRepository.findByCartIdAndVehicleId(cart.getId(), vehicleId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Vehicle is not in your cart"));
+        if (!item.getAccessoryIds().remove(accessoryId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Accessory is not selected");
+        }
+        cartItemRepository.save(item);
+        return buildResponse(userId, cart, "Accessory removed from the vehicle");
+    }
+
+    private Accessory getAccessory(Long accessoryId) {
+        if (accessoryRepository == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Accessories are unavailable");
+        }
+        return accessoryRepository.findById(accessoryId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Accessory not found"));
+    }
+
     private Cart getOrCreateCart(Long userId) {
         return cartRepository
                 .findByUserId(userId)
@@ -398,6 +444,14 @@ public class CartService {
                                 Function.identity()
                         ));
 
+        Set<Long> accessoryIds = cartItems.stream()
+                .flatMap(item -> item.getAccessoryIds().stream())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, Accessory> accessoriesById = accessoryRepository == null || accessoryIds.isEmpty()
+                ? Map.of()
+                : accessoryRepository.findAllById(accessoryIds).stream()
+                        .collect(Collectors.toMap(Accessory::getId, Function.identity()));
+
         List<CartItemView> itemViews = new ArrayList<>();
 
         BigDecimal subtotal = BigDecimal.ZERO;
@@ -413,7 +467,22 @@ public class CartService {
             BigDecimal price =
                     BigDecimal.valueOf(vehicle.getPrice());
 
-            BigDecimal lineTotal = price.multiply(
+            List<AccessoryView> accessoryViews = item.getAccessoryIds().stream()
+                    .map(accessoriesById::get)
+                    .filter(java.util.Objects::nonNull)
+                    .map(accessory -> new AccessoryView(
+                            accessory.getId(),
+                            accessory.getName(),
+                            accessory.getDescription(),
+                            BigDecimal.valueOf(accessory.getPrice())
+                    ))
+                    .toList();
+
+            BigDecimal accessoryTotal = accessoryViews.stream()
+                    .map(AccessoryView::price)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            BigDecimal lineTotal = price.add(accessoryTotal).multiply(
                     BigDecimal.valueOf(item.getQuantity())
             );
 
@@ -429,6 +498,7 @@ public class CartService {
                     vehicle.isHotDeal(),
                     vehicle.isAvailable(),
                     item.getQuantity(),
+                    accessoryViews,
                     lineTotal
             ));
 

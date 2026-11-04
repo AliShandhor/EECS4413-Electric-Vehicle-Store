@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import org.hibernate.annotations.ColumnDefault;
 
 @Entity
 public class Vehicle {
@@ -23,6 +24,10 @@ public class Vehicle {
 
     @Column(nullable = false)
     private boolean available = true;
+
+    @Column(nullable = false)
+    @ColumnDefault("false")
+    private boolean imageAvailable = false;
 
     public Vehicle() {
     }
@@ -82,6 +87,10 @@ public class Vehicle {
         return available;
     }
 
+    public boolean isImageAvailable() {
+        return imageAvailable;
+    }
+
     public void setId(Long id) {
         this.id = id;
     }
@@ -116,5 +125,9 @@ public class Vehicle {
 
     public void setAvailable(boolean available) {
         this.available = available;
+    }
+
+    public void setImageAvailable(boolean imageAvailable) {
+        this.imageAvailable = imageAvailable;
     }
 }

@@ -78,9 +78,7 @@ Content-Type: application/json
 
     @PostMapping
     public ChatResponse chat(@RequestBody ChatRequest request) {
-
-        String answer = chatbotService.getResponse(request.getMessage());;
-
+        String answer = chatbotService.getResponse(request.getMessage(), request.getHistory());
         return new ChatResponse(answer);
     }
 }
